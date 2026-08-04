@@ -102,6 +102,21 @@ function viewHome() {
       </button>`;
   }).join('');
 
+  // 備份提醒：有資料且超過 30 天沒匯出（或從未匯出）
+  let backupBanner = '';
+  if (state.loans.length) {
+    const days = state.lastExport
+      ? Math.floor((now - parseDate(state.lastExport)) / 86400000)
+      : null;
+    if (days === null || days > 30) {
+      backupBanner = `
+        <button class="slim notice" data-action="export-xlsx">
+          <span class="l">${days === null ? '還沒備份過' : `上次備份 ${days} 天前`}</span>
+          <span class="r" style="font-size:18px">點我匯出 ›</span>
+        </button>`;
+    }
+  }
+
   const st = stats(state, now);
   const alertRow = st.problemCount ? `
     <button class="slim alert" data-action="go" data-view="problems">
@@ -112,7 +127,7 @@ function viewHome() {
   return `
     <div class="title-row"><h1 class="title">首頁</h1>
       <span class="date">今天 ${mdTxt(now)}</span></div>
-
+    ${backupBanner}
     <div class="card cal">
       <div class="cal-month-row">
         <span class="cal-month" data-action="cal-today">${y} · ${m + 1}月</span>
