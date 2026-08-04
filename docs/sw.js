@@ -1,5 +1,5 @@
 // service worker：離線快取（stale-while-revalidate）
-const CACHE = 'loanapp-v3';
+const CACHE = 'loanapp-v4';
 const ASSETS = [
   './',
   './index.html',
