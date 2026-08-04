@@ -5,7 +5,7 @@ import {
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth,
   isActive, isProblem, stats, monthlySeries, money,
 } from './calc.js';
-import { downloadICS } from './ics.js';
+import { downloadICS, downloadStopICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
 
 let state = load();
@@ -200,6 +200,7 @@ function viewDetail() {
         <p class="sub">本金 ${money(l.principal)} ＋ 欠 ${periods} 期利息 ${money(accrued)}（${mdTxt(parseDate(l.overdueSince))} 起算）</p>
       </div>
       <button class="btn green" data-action="repay-overdue" data-id="${l.id}">收到補繳，記一筆</button>
+      <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
       <div class="btn-pair">
         ${l.status === 'overdue'
           ? `<button class="btn outline-red" data-action="to-legal" data-id="${l.id}">進法院</button>
@@ -215,7 +216,8 @@ function viewDetail() {
           ${l.finalReceived != null ? `<div><span class="k">結案實收</span><span class="v">${money(l.finalReceived)}</span></div>` : ''}
           ${l.writeoff ? `<div><span class="k">壞帳沖銷</span><span class="v red">${money(l.writeoff)}</span></div>` : ''}
         </div>
-      </div>`;
+      </div>
+      <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>`;
   }
 
   return `
@@ -521,7 +523,7 @@ const actions = {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { alert('日期格式要像 2026-08-04'); return; }
     l.status = 'overdue'; l.overdueSince = d.trim();
     commit();
-    alert('已列入問題帳。\n提醒：記得到「行事曆」把這筆的收息提醒刪掉。');
+    alert('已列入問題帳。\n記得按「停止行事曆提醒」，每月提醒才會停。');
   },
   'back-normal'(el) {
     const l = loanById(el.dataset.id);
@@ -557,14 +559,14 @@ const actions = {
     l.writeoff = Math.max(0, owed - got);
     l.status = 'closed';
     commit();
-    alert(`結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}\n記得到「行事曆」刪掉這筆的提醒。`);
+    alert(`結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}\n記得按「停止行事曆提醒」。`);
   },
   'close-normal'(el) {
     const l = loanById(el.dataset.id);
     if (!confirm(`${l.name} 還清本金 ${money(l.principal)}，結清這筆借款？`)) return;
     l.status = 'closed';
     commit();
-    alert('已結清。記得到「行事曆」刪掉這筆的提醒。');
+    alert('已結清。記得按「停止行事曆提醒」，每月提醒才會停。');
   },
   'delete-loan'(el) {
     const l = loanById(el.dataset.id);
@@ -578,6 +580,10 @@ const actions = {
   'ics-one'(el) {
     const l = loanById(el.dataset.id);
     downloadICS([l], `收息提醒-${l.name}.ics`);
+  },
+  'ics-stop'(el) {
+    downloadStopICS(loanById(el.dataset.id));
+    setTimeout(() => alert('打開下載的檔案按「加入」，這筆的每月提醒就會停。\n若行事曆裡看到「（已停止）」的舊事件，點它刪掉即可。'), 300);
   },
   'ics-all'() {
     const normals = state.loans.filter(l => l.status === 'normal');

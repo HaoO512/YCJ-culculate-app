@@ -36,6 +36,39 @@ function vevent(loan) {
   ];
 }
 
+// 停止提醒：同一個 UID、重複規則結束日設在昨天 → 行事曆把整串更新成「已結束」，之後不再跳
+export function buildStopICS(loan) {
+  const now = today();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const byday = loan.dueDay === 'EOM' ? '-1' : String(loan.dueDay);
+  const start = loan.startDate ? loan.startDate.replace(/-/g, '') : icsDate(yesterday);
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//loanapp//億起記//TW',
+    'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    `UID:loan-${loan.id}@loanapp`,
+    `DTSTAMP:${icsDate(now)}T120000Z`,
+    'SEQUENCE:2',
+    `DTSTART;VALUE=DATE:${start}`,
+    `RRULE:FREQ=MONTHLY;BYMONTHDAY=${byday};UNTIL=${icsDate(yesterday)}`,
+    `SUMMARY:${esc(`（已停止）收${loan.name}利息`)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n') + '\r\n';
+}
+
+export function downloadStopICS(loan) {
+  const blob = new Blob([buildStopICS(loan)], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `停止提醒-${loan.name}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+}
+
 export function buildICS(loans) {
   const lines = [
     'BEGIN:VCALENDAR',
