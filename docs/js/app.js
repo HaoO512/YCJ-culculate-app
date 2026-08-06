@@ -473,6 +473,7 @@ function viewStats() {
         <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
       </div>
     </div>
+    <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
     ${cloud.meta().pushOn
       ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button>'
       : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
@@ -659,6 +660,20 @@ const actions = {
   },
   'import-xlsx'() { $importFile.click(); },
 
+  async 'cloud-sync-now'() {
+    try {
+      const r = await cloud.pull();
+      const cloudAt = r && r.state ? (r.state.updatedAt || r.updatedAt || 0) : 0;
+      if (cloudAt > (state.updatedAt || 0)) {
+        state = r.state;
+        save(state, false);
+      } else {
+        await cloud.pushNow(state);
+      }
+      render();
+      alert('同步完成 ✓');
+    } catch { alert('連不上雲端，檢查網路。'); }
+  },
   async 'cloud-push-enable'() {
     try {
       await cloud.enablePush();
