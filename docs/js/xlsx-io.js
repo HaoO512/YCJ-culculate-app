@@ -16,6 +16,7 @@ export function exportXlsx(state) {
     '月利率%': l.rate,
     '借款日期': l.startDate,
     '收息日': l.dueDay === 'EOM' ? '月底' : l.dueDay,
+    '預收月數': l.prepaidMonths || 0,
     '每月利息': monthlyInterest(l),
     '狀態': STATUS_TXT[l.status] || l.status,
     '停繳日': l.overdueSince || '',
@@ -91,9 +92,12 @@ export function parseXlsx(arrayBuffer) {
     if ((status === 'overdue' || status === 'legal') && !overdueSince)
       errors.push(`${rowNo}：欠繳／法院狀態要填停繳日`);
 
+    const prepaidMonths = Number(r['預收月數'] || 0);
+    if (!(prepaidMonths >= 0 && prepaidMonths <= 12)) errors.push(`${rowNo}：預收月數不合理`);
+
     loans.push({
       id: String(r['編號'] || '').trim() || newId(),
-      name, principal, rate, startDate, dueDay,
+      name, principal, rate, startDate, dueDay, prepaidMonths,
       status: status || 'normal',
       overdueSince,
       finalReceived: r['結案實收'] === '' || r['結案實收'] == null ? null : Number(r['結案實收']),

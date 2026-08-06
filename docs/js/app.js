@@ -3,6 +3,7 @@ import { load, save, newId } from './store.js';
 import {
   parseDate, fmtDate, today, monthlyInterest, defaultReferral, DEFAULT_APPRAISAL,
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth,
+  prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, money,
 } from './calc.js';
 import { downloadICS, downloadStopICS } from './ics.js';
@@ -63,7 +64,7 @@ function viewHome() {
     const d = dueDateFor(y, m, l.dueDay);
     return {
       loan: l, day: d.getDate(),
-      paid: paidInMonth(state.payments, l.id, y, m),
+      paid: settledInMonth(state.payments, l, y, m),
       problem: isProblem(l),
     };
   }).sort((a, b) => a.day - b.day);
@@ -178,11 +179,14 @@ function viewDetail() {
   if (!l) return '<div class="empty">找不到這筆借款</div>';
   const now = today();
   const mi = monthlyInterest(l);
-  const next = nextDue(l, now);
+  const next = nextCollectDue(l, now);
   const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   const nextTxt = next.getTime() === now.getTime() ? '就是今天'
     : next.getTime() === tomorrow.getTime() ? `明天 ${mdTxt(next)}` : mdTxt(next);
-  const paid = paidInMonth(state.payments, l.id, now.getFullYear(), now.getMonth());
+  const paidReal = paidInMonth(state.payments, l.id, now.getFullYear(), now.getMonth());
+  const paid = settledInMonth(state.payments, l, now.getFullYear(), now.getMonth());
+  const byPrepaid = paid && !paidReal;
+  const pu = prepaidUntil(l);
 
   const pays = state.payments.filter(p => p.loanId === l.id)
     .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 24);
@@ -198,7 +202,7 @@ function viewDetail() {
   if (l.status === 'normal') {
     statusBlock = `
       <button class="btn green" data-action="receive" data-id="${l.id}" ${paid ? 'disabled' : ''}>
-        ${paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
+        ${byPrepaid ? '✓ 本月在預收範圍內' : paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
       </button>
       <button class="btn outline-grey" data-action="ics-one" data-id="${l.id}">加到行事曆（每月提醒）</button>
       <div class="btn-pair">
@@ -255,6 +259,7 @@ function viewDetail() {
         <div><span class="k">本金</span><span class="v">${money(l.principal)}</span></div>
         <div><span class="k">月利率</span><span class="v">${l.rate}%</span></div>
         <div><span class="k">借款日期</span><span class="v">${l.startDate}</span></div>
+        ${l.prepaidMonths ? `<div><span class="k">簽約預收</span><span class="v">${l.prepaidMonths} 個月（至 ${pu ? mdTxt(pu) : ''}）</span></div>` : ''}
         <div><span class="k">介紹費</span><span class="v">${money(l.referralFee || 0)}</span></div>
         <div><span class="k">代書費</span><span class="v">${money(l.appraisalFee || 0)}</span></div>
         ${l.note ? `<div><span class="k">備註</span><span class="v" style="font-weight:600">${esc(l.note)}</span></div>` : ''}
@@ -275,8 +280,11 @@ function viewForm() {
   const l = editing || {
     name: '', principal: '', rate: 2,
     startDate: fmtDate(today()), dueDay: today().getDate() > 28 ? 'EOM' : today().getDate(),
-    referralFee: '', appraisalFee: DEFAULT_APPRAISAL, note: '',
+    prepaidMonths: 3, referralFee: '', appraisalFee: DEFAULT_APPRAISAL, note: '',
   };
+  const pm = l.prepaidMonths ?? 0;
+  const pmOptions = [0, 1, 2, 3, 4, 5, 6].map(n =>
+    `<option value="${n}"${pm === n ? ' selected' : ''}>${n === 0 ? '不預收' : n + ' 個月'}</option>`).join('');
 
   const dayOptions = ['<option value="EOM"' + (l.dueDay === 'EOM' ? ' selected' : '') + '>月底</option>'];
   for (let d = 1; d <= 28; d++) {
@@ -300,6 +308,9 @@ function viewForm() {
     <div class="field"><label>收息日（每月幾號）</label>
       <select id="f-dueday">${dayOptions.join('')}</select>
       <span class="hint">29–31 號請選「月底」，小月才不會漏</span></div>
+    <div class="field"><label>簽約預收利息</label>
+      <select id="f-prepaid">${pmOptions}</select>
+      <span class="hint">簽約當天一次收走前幾個月利息，提醒自動從之後開始</span></div>
 
     <div class="calc-panel">
       <p class="card-label">App 幫你算好</p>
@@ -325,8 +336,10 @@ function refreshFormCalc() {
   const principal = Number(document.getElementById('f-principal').value) || 0;
   const rate = Number(document.getElementById('f-rate').value) || 0;
   const mi = Math.round(principal * rate / 100);
+  const pmSel = Number(document.getElementById('f-prepaid')?.value) || 0;
   box.innerHTML = `
     <div><span class="k">每月利息</span><span class="v">${money(mi)}</span></div>
+    ${pmSel ? `<div><span class="k">簽約當天收（${pmSel} 個月息）</span><span class="v">${money(mi * pmSel)}</span></div>` : ''}
     <div><span class="k">介紹費（半個月息）</span><span class="v">${money(Math.round(mi / 2))}</span></div>
     <div><span class="k">代書費</span><span class="v">${money(Number(document.getElementById('f-appraisal').value) || 0)}</span></div>`;
   const ref = document.getElementById('f-referral');
@@ -340,6 +353,7 @@ function saveForm(id) {
   const startDate = document.getElementById('f-start').value;
   const dv = document.getElementById('f-dueday').value;
   const dueDay = dv === 'EOM' ? 'EOM' : Number(dv);
+  const prepaidMonths = Number(document.getElementById('f-prepaid').value) || 0;
   const referralFee = Number(document.getElementById('f-referral').value) || 0;
   const appraisalFee = Number(document.getElementById('f-appraisal').value) || 0;
   const note = document.getElementById('f-note').value.trim();
@@ -352,17 +366,26 @@ function saveForm(id) {
   if (errs.length) { alert(errs.join('\n')); return; }
 
   if (id) {
-    Object.assign(loanById(id), { name, principal, rate, startDate, dueDay, referralFee, appraisalFee, note });
+    Object.assign(loanById(id), { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, appraisalFee, note });
     save(state); go('detail', { id });
   } else {
     const loan = {
-      id: newId(), name, principal, rate, startDate, dueDay,
+      id: newId(), name, principal, rate, startDate, dueDay, prepaidMonths,
       status: 'normal', overdueSince: null, finalReceived: null, writeoff: null,
       referralFee, appraisalFee, note,
     };
     state.loans.push(loan);
+    // 預收利息：簽約當天記一筆收款
+    const mi = Math.round(principal * rate / 100);
+    if (prepaidMonths > 0) {
+      state.payments.push({ id: newId(), loanId: loan.id, date: startDate, amount: mi * prepaidMonths });
+    }
     save(state); go('detail', { id: loan.id });
-    setTimeout(() => alert('存好了！\n記得按「加到行事曆」，之後每月前一天會自動提醒。'), 100);
+    // 行事曆檔自動下載，少按一顆按鈕
+    setTimeout(() => {
+      downloadICS([loan], `收息提醒-${loan.name}.ics`);
+      alert(`存好了！${prepaidMonths ? `已記一筆預收 ${money(mi * prepaidMonths)}。` : ''}\n行事曆檔已自動下載：點開它按「加入」，提醒就設好了${prepaidMonths ? '（會自動從預收期之後才開始跳）' : ''}。`);
+    }, 300);
   }
 }
 
@@ -486,6 +509,7 @@ function render() {
     for (const id of ['f-principal', 'f-rate', 'f-appraisal']) {
       document.getElementById(id).addEventListener('input', refreshFormCalc);
     }
+    document.getElementById('f-prepaid').addEventListener('change', refreshFormCalc);
     document.getElementById('f-referral').addEventListener('input', e => { e.target.dataset.touched = '1'; });
     const startEl = document.getElementById('f-start');
     startEl.addEventListener('change', () => {

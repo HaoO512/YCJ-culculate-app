@@ -59,6 +59,37 @@ export function overdueInterest(loan, now) {
   return overduePeriods(loan, now) * monthlyInterest(loan);
 }
 
+// 簽約後第一個收息日（嚴格在借款日之後）
+export function firstDueAfterStart(loan) {
+  const s = parseDate(loan.startDate);
+  return nextDue(loan, new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1));
+}
+
+// 預收利息涵蓋到的最後一個收息日；沒預收回傳 null
+export function prepaidUntil(loan) {
+  const n = loan.prepaidMonths || 0;
+  if (n <= 0) return null;
+  let d = firstDueAfterStart(loan);
+  for (let i = 1; i < n; i++) d = dueDateFor(d.getFullYear(), d.getMonth() + 1, loan.dueDay);
+  return d;
+}
+
+// 該月已處理？（實際收過款，或被預收涵蓋）
+export function settledInMonth(payments, loan, year, month) {
+  if (paidInMonth(payments, loan.id, year, month)) return true;
+  const pu = prepaidUntil(loan);
+  if (!pu) return false;
+  return dueDateFor(year, month, loan.dueDay) <= pu;
+}
+
+// 下一個「真的要收」的收息日（跳過預收涵蓋期）
+export function nextCollectDue(loan, from) {
+  let d = nextDue(loan, from);
+  const pu = prepaidUntil(loan);
+  if (pu && d <= pu) d = dueDateFor(pu.getFullYear(), pu.getMonth() + 1, loan.dueDay);
+  return d;
+}
+
 // 本月是否已收息（看收款記錄有沒有落在該月）
 export function paidInMonth(payments, loanId, year, month) {
   return payments.some(p => {
@@ -89,7 +120,13 @@ export function stats(state, now) {
     return parseDate(p.date).getFullYear() === now.getFullYear() ? s + p.amount : s;
   }, 0);
 
-  const monthDue = normals.reduce((s, l) => s + monthlyInterest(l), 0);
+  // 本月要收：排除被預收涵蓋的月份
+  const monthDue = normals.reduce((s, l) => {
+    const pu = prepaidUntil(l);
+    const due = dueDateFor(now.getFullYear(), now.getMonth(), l.dueDay);
+    if (pu && due <= pu) return s;
+    return s + monthlyInterest(l);
+  }, 0);
   const monthReceived = state.payments.reduce((s, p) => {
     const d = parseDate(p.date);
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() ? s + p.amount : s;

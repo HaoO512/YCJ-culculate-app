@@ -1,5 +1,5 @@
 // .ics 行事曆檔產生：每筆借款一個每月重複事件，前一天 09:00 + 當天 09:00 提醒
-import { monthlyInterest, nextDue, today, money } from './calc.js';
+import { monthlyInterest, nextCollectDue, today, money } from './calc.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -12,7 +12,7 @@ function esc(s) {
 }
 
 function vevent(loan) {
-  const start = nextDue(loan, today());
+  const start = nextCollectDue(loan, today());
   const byday = loan.dueDay === 'EOM' ? '-1' : String(loan.dueDay);
   const title = `收${loan.name}利息 ${money(monthlyInterest(loan))}`;
   return [
