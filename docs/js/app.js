@@ -60,14 +60,19 @@ function viewHome() {
       <div class="empty">還沒有借款記錄。<br><br>按下面的 <b style="color:var(--accent)">＋</b> 新增第一筆。</div>`;
   }
 
-  // 本月每筆的收息資訊
-  const dues = active.map(l => {
+  // 本月每筆的收息資訊；預收涵蓋的月份整個跳過（沒事要做，不畫點不列行）
+  const dues = active.flatMap(l => {
     const d = dueDateFor(y, m, l.dueDay);
-    return {
+    const problem = isProblem(l);
+    if (!problem) {
+      const pu = prepaidUntil(l);
+      if (pu && d <= pu) return [];
+    }
+    return [{
       loan: l, day: d.getDate(),
       paid: settledInMonth(state.payments, l, y, m),
-      problem: isProblem(l),
-    };
+      problem,
+    }];
   }).sort((a, b) => a.day - b.day);
 
   // 月曆格

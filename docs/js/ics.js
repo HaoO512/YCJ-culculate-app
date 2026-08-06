@@ -19,6 +19,7 @@ function vevent(loan) {
     'BEGIN:VEVENT',
     `UID:loan-${loan.id}@loanapp`,
     `DTSTAMP:${icsDate(today())}T000000Z`,
+    `SEQUENCE:${Math.floor(Date.now() / 1000)}`,
     `DTSTART;VALUE=DATE:${icsDate(start)}`,
     `RRULE:FREQ=MONTHLY;BYMONTHDAY=${byday}`,
     `SUMMARY:${esc(title)}`,
