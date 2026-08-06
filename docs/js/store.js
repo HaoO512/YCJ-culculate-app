@@ -14,8 +14,10 @@ export function load() {
   }
 }
 
-export function save(state) {
+export function save(state, touch = true) {
+  if (touch) state.updatedAt = Date.now();
   localStorage.setItem(KEY, JSON.stringify(state));
+  if (touch && typeof save.onSave === 'function') save.onSave();
 }
 
 export function emptyState() {

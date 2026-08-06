@@ -21,3 +21,11 @@
 - `docs/` = App 本體（純 HTML/CSS/JS + SheetJS），GitHub Pages 從 main 分支 /docs 服務
 - [REQUIREMENTS.md](REQUIREMENTS.md) 需求清單 · [TECH_PLAN.md](TECH_PLAN.md) 技術方案
 - 本機試跑：`npx http-server docs -p 8123`
+
+## 雲端同步（v3.0）
+
+- 後端：`worker/` = Cloudflare Worker（yiqiji-sync.haoo512.workers.dev），免費額度
+- 資料：帳目自動同步到 Cloudflare KV，雲端每日自動快照保留 31 天
+- 提醒：統計頁「開啟自動提醒」後，收息前一天與當天 09:30 自動推播，免行事曆
+- 金鑰：統計頁「顯示同步金鑰」，換手機輸入金鑰即可取回全部資料
+- 部署後端：`cd worker && npx wrangler deploy`

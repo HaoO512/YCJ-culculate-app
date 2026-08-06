@@ -1,0 +1,13 @@
+name = "yiqiji-sync"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[triggers]
+crons = ["30 1 * * *"]   # UTC 01:30 = 台北 09:30
+
+[[kv_namespaces]]
+binding = "KV"
+id = "6248193a3f1b4d5fae68b646eb6cd32a"
+
+[vars]
+VAPID_PUBLIC = "BIklPNnHHaruS7zCubOCiKLy2I58tV-PXqXVeADCl5zei_h7KK03X05OP4XwtqhVj5TBWLjGLqMLfut0OF_y8Tc"

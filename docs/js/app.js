@@ -8,6 +8,7 @@ import {
 } from './calc.js';
 import { downloadICS, downloadStopICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
+import * as cloud from './cloud.js';
 
 let state = load();
 let route = { view: 'home' };          // home | people | detail | form | problems | stats
@@ -465,11 +466,33 @@ function viewStats() {
       <div class="stat"><p class="k">壞帳沖銷</p><p class="n">${money(st.writeoffTotal)}</p></div>
     </div>
 
+    <div class="card">
+      <p class="card-label">雲端同步</p>
+      <div class="kv">
+        <div><span class="k">狀態</span><span class="v">${syncStatusTxt()}</span></div>
+        <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
+      </div>
+    </div>
+    ${cloud.meta().pushOn
+      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button>'
+      : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
+    <div class="btn-pair">
+      <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
+      <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
+    </div>
     <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
-    <button class="btn accent" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
+    <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
     <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
     <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
   `;
+}
+
+function syncStatusTxt() {
+  const m = cloud.meta();
+  if (m.pending) return '待同步（離線中，連上網會自動補傳）';
+  if (!m.lastSync) return '尚未同步';
+  const min = Math.floor((Date.now() - m.lastSync) / 60000);
+  return min < 1 ? '剛剛已同步 ✓' : min < 60 ? `${min} 分鐘前已同步 ✓` : new Date(m.lastSync).toLocaleString('zh-TW') + ' ✓';
 }
 
 // ───────────────────────── 分頁列 ─────────────────────────
@@ -635,6 +658,41 @@ const actions = {
     save(state); render();
   },
   'import-xlsx'() { $importFile.click(); },
+
+  async 'cloud-push-enable'() {
+    try {
+      await cloud.enablePush();
+      render();
+      alert('自動提醒開好了！\n收息前一天和當天早上 9:30，手機會自動跳通知，什麼都不用按。\n按「測試提醒」馬上試一則。');
+    } catch (e) { alert(e.message); }
+  },
+  async 'cloud-push-test'() {
+    try {
+      const r = await cloud.testPush();
+      if (!r.sent) alert('沒有送出。這支手機還沒開啟自動提醒？');
+    } catch { alert('連不上雲端，檢查網路。'); }
+  },
+  'cloud-show-key'() {
+    prompt('這是你的同步金鑰（等於資料的鑰匙，抄下來收好；\n換手機或第二台裝置輸入它就能連回同一份資料）：', cloud.getKey());
+  },
+  async 'cloud-set-key'() {
+    const k = prompt('輸入另一組同步金鑰（會改連到那份資料）：');
+    if (!k || k.trim().length < 24) { if (k != null) alert('金鑰長度不對'); return; }
+    cloud.setKey(k);
+    try {
+      const r = await cloud.pull();
+      if (r && r.state) {
+        state = r.state;
+        save(state, false);
+        alert('已連上，資料同步完成。');
+        go('home');
+      } else {
+        await cloud.pushNow(state);
+        alert('這組金鑰雲端還沒有資料，已把目前手機的資料傳上去。');
+        render();
+      }
+    } catch { alert('連不上雲端，檢查網路或金鑰。'); }
+  },
 };
 
 function routeBack() {
@@ -682,4 +740,26 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
+// 雲端同步：每次存檔自動上傳（2 秒去抖動）
+save.onSave = () => cloud.schedulePush(() => state, () => {
+  if (route.view === 'stats') render();
+});
+
+// 開機：先畫本地，再比對雲端，新的贏
 render();
+cloud.pull().then(r => {
+  if (!r || !r.state) { cloud.schedulePush(() => state); return; }
+  const cloudAt = r.state.updatedAt || r.updatedAt || 0;
+  if (cloudAt > (state.updatedAt || 0)) {
+    state = r.state;
+    save(state, false);
+    render();
+  } else if ((state.updatedAt || 0) > cloudAt) {
+    cloud.schedulePush(() => state);
+  }
+}).catch(() => {});
+
+// 斷線後補傳
+window.addEventListener('online', () => {
+  if (cloud.meta().pending) cloud.schedulePush(() => state);
+});
