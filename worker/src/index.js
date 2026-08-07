@@ -209,10 +209,15 @@ function validMoney(n) { return typeof n === 'number' && Number.isFinite(n) && n
 function validateState(state) {
   if (!Array.isArray(state.payments)) return 'payments 不是陣列';
   if (state.loans.length > 5000 || state.payments.length > 100000) return '資料量異常';
+  const loanIds = new Set();
   for (const l of state.loans) {
+    if (typeof l.id !== 'string' || !l.id || loanIds.has(l.id)) return '借款編號缺失或重複';
+    loanIds.add(l.id);
     if (typeof l.name !== 'string' || !l.name.trim()) return '借款缺姓名';
     if (!(typeof l.principal === 'number' && Number.isFinite(l.principal) && l.principal > 0)) return `${l.name}：本金無效`;
-    if (!(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0 && l.rate <= 50)) return `${l.name}：利率無效`;
+    if (!(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0 && l.rate <= 20)) return `${l.name}：利率無效`;
+    if (l.finalReceived != null && !validMoney(l.finalReceived)) return `${l.name}：結案實收無效`;
+    if (l.writeoff != null && !validMoney(l.writeoff)) return `${l.name}：壞帳沖銷無效`;
     if (!validDate(l.startDate)) return `${l.name}：借款日期無效`;
     if (!(l.dueDay === 'EOM' || (Number.isInteger(l.dueDay) && l.dueDay >= 1 && l.dueDay <= 31))) return `${l.name}：收息日無效`;
     if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) return `${l.name}：狀態無效`;
@@ -221,9 +226,11 @@ function validateState(state) {
     if (l.referralFee != null && !validMoney(l.referralFee)) return `${l.name}：介紹費無效`;
     if (l.appraisalFee != null && !validMoney(l.appraisalFee)) return `${l.name}：代書費無效`;
   }
-  const ids = new Set(state.loans.map(l => l.id));
+  const payIds = new Set();
   for (const p of state.payments) {
-    if (!ids.has(p.loanId)) return '收款記錄對不上借款';
+    if (typeof p.id !== 'string' || !p.id || payIds.has(p.id)) return '收款編號缺失或重複';
+    payIds.add(p.id);
+    if (!loanIds.has(p.loanId)) return '收款記錄對不上借款';
     if (!validDate(p.date)) return '收款日期無效';
     if (!(typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount > 0)) return '收款金額無效';
   }
@@ -263,10 +270,15 @@ export default {
       if (!parsed.state || !Array.isArray(parsed.state.loans)) return json({ error: 'bad shape' }, 400);
       const verr = validateState(parsed.state);
       if (verr) return json({ error: verr }, 400);
+      const existing = await env.KV.get(`data:${uid}`);
+      // 防濫用：新帳戶數量上限（單人 App，正常裝置數遠低於此）
+      if (!existing) {
+        const cnt = (await env.KV.list({ prefix: 'data:' })).keys.length;
+        if (cnt >= 20) return json({ error: '雲端帳戶數已達上限，請用既有金鑰連線' }, 403);
+      }
       // 當日第一次寫入前，把舊資料存成快照
       const day = tpeDateStr();
       const snapKey = `snap:${uid}:${day}`;
-      const existing = await env.KV.get(`data:${uid}`);
       if (existing && !(await env.KV.get(snapKey))) {
         await env.KV.put(snapKey, existing, { expirationTtl: 31 * 86400 });
       }

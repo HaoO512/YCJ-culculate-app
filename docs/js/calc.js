@@ -56,17 +56,18 @@ export function overduePeriods(loan, now) {
   return n;
 }
 
-// 欠繳期間已補繳的總額
-export function arrearsPaid(loan, payments) {
+// 欠繳期間已補繳的總額（只算到 now 為止，未來日期的付款不提前沖）
+export function arrearsPaid(loan, payments, now) {
   if (!loan.overdueSince) return 0;
+  const cap = now ? fmtDate(now) : '9999-12-31';
   return (payments || []).reduce((s, p) =>
-    p.loanId === loan.id && p.date >= loan.overdueSince ? s + p.amount : s, 0);
+    p.loanId === loan.id && p.date >= loan.overdueSince && p.date <= cap ? s + p.amount : s, 0);
 }
 
 // 累計欠息（單利，扣掉欠繳期間的補繳，下限 0）
 export function overdueInterest(loan, now, payments) {
   const gross = overduePeriods(loan, now) * monthlyInterest(loan);
-  return Math.max(0, gross - arrearsPaid(loan, payments));
+  return Math.max(0, gross - arrearsPaid(loan, payments, now));
 }
 
 // 簽約後第一個收息日（嚴格在借款日之後）

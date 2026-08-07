@@ -64,7 +64,8 @@ function viewHome() {
   const dues = active.flatMap(l => {
     const d = dueDateFor(y, m, l.dueDay);
     if (d < parseDate(l.startDate)) return [];
-    const problem = isProblem(l);
+    // 欠繳只從停繳日起算紅點；之前的月份當一般月份處理
+    const problem = isProblem(l) && (!l.overdueSince || d >= parseDate(l.overdueSince));
     if (!problem) {
       const pu = prepaidUntil(l);
       if (pu && d <= pu) return [];
@@ -155,7 +156,7 @@ function viewHome() {
 
     <div class="rowlist">${rows || '<div class="empty">這天沒有要收的錢</div>'}</div>
     ${alertRow}
-    ${st.monthDue ? `<div class="slim total"><span class="l">本月要收</span><span class="r">${money(st.monthDue)}</span></div>` : ''}
+    ${st.monthDue ? `<div class="slim total"><span class="l">本月應收</span><span class="r">${money(st.monthDue)}</span></div>` : ''}
   `;
 }
 
@@ -290,7 +291,7 @@ function viewForm() {
     prepaidMonths: 3, referralFee: '', appraisalFee: DEFAULT_APPRAISAL, note: '',
   };
   const pm = l.prepaidMonths ?? 0;
-  const pmOptions = [0, 1, 2, 3, 4, 5, 6].map(n =>
+  const pmOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n =>
     `<option value="${n}"${pm === n ? ' selected' : ''}>${n === 0 ? '不預收' : n + ' 個月'}</option>`).join('');
 
   const dayOptions = ['<option value="EOM"' + (l.dueDay === 'EOM' ? ' selected' : '') + '>月底</option>'];
@@ -494,7 +495,7 @@ function viewStats() {
     </div>
     <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
     ${cloud.meta().pushOn
-      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button>'
+      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button><p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">已開自動提醒 —— 行事曆提醒可以不用再加，兩邊都加會重複通知。</p>'
       : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
     <div class="btn-pair">
       <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
@@ -509,6 +510,7 @@ function viewStats() {
 
 function syncStatusTxt() {
   const m = cloud.meta();
+  if (m.lastError) return `同步被拒：${m.lastError}（資料仍在手機，修正後按立刻同步）`;
   if (m.pending) return '待同步（離線中，連上網會自動補傳）';
   if (!m.lastSync) return '尚未同步';
   const min = Math.floor((Date.now() - m.lastSync) / 60000);
@@ -600,11 +602,18 @@ const actions = {
 
   'mark-overdue'(el) {
     const l = loanById(el.dataset.id);
-    const d = prompt('從哪天開始停繳？（格式 2026-08-04）', fmtDate(today()));
+    const now0 = today();
+    // 預設 = 最近一次該收而沒收的收息日
+    let def = dueDateFor(now0.getFullYear(), now0.getMonth(), l.dueDay);
+    if (def > now0) def = dueDateFor(now0.getFullYear(), now0.getMonth() - 1, l.dueDay);
+    if (def < parseDate(l.startDate)) def = now0;
+    const d = prompt('第一個「沒繳」的收息日是哪天？\n（預設＝最近一次該收的日子，欠息從這天起算）', fmtDate(def));
     if (!d) return;
     const t = d.trim();
     const dd = /^\d{4}-\d{2}-\d{2}$/.test(t) ? parseDate(t) : null;
     if (!dd || fmtDate(dd) !== t) { alert('這不是真實日期，格式要像 2026-08-04'); return; }
+    if (dd < parseDate(l.startDate)) { alert('停繳日不能早於借款日（' + l.startDate + '）'); return; }
+    if (dd > now0) { alert('停繳日不能是未來'); return; }
     l.status = 'overdue'; l.overdueSince = t;
     commit();
     downloadStopICS(l);
@@ -627,10 +636,15 @@ const actions = {
   'repay-overdue'(el) {
     const l = loanById(el.dataset.id);
     const accrued = overdueInterest(l, today(), state.payments);
+    if (accrued <= 0) { alert('目前沒有累計欠息。'); return; }
     const v = prompt(`收到多少？（目前累計欠息 ${money(accrued)}）`, String(accrued));
     if (v == null) return;
     const amount = Number(v);
-    if (!(amount > 0)) { alert('金額要是正數'); return; }
+    if (!(Number.isFinite(amount) && amount > 0)) { alert('金額要是正常的正數'); return; }
+    if (amount > accrued) {
+      alert(`超過目前欠息 ${money(accrued)}。\n這裡只記補欠息；若是還本金或預付，請用結清或備註記錄。`);
+      return;
+    }
     state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(today()), amount });
     commit();
   },
@@ -641,7 +655,7 @@ const actions = {
     const v = prompt(`結案最後實拿多少？\n（應收 = 本金＋欠息 = ${money(owed)}）`, String(owed));
     if (v == null) return;
     const got = Number(v);
-    if (!(got >= 0)) { alert('金額不對'); return; }
+    if (!(Number.isFinite(got) && got >= 0)) { alert('金額不對'); return; }
     l.finalReceived = got;
     l.writeoff = Math.max(0, owed - got);
     l.status = 'closed';
@@ -793,8 +807,13 @@ save.onSave = () => cloud.schedulePush(() => state, () => {
   if (route.view === 'stats') render();
 });
 
-// 開機：先畫本地，再比對雲端，新的贏
-render();
+// 開機：先畫本地（畫不出來就顯示救援訊息，不讓白屏卡死），再比對雲端，新的贏
+try {
+  render();
+} catch (e) {
+  $view.innerHTML = '<div class="empty">本機資料有問題，正在從雲端救援…<br><br>連不上網的話請聯絡管理者。</div>';
+  state = { version: 1, loans: [], payments: [], lastExport: null };
+}
 cloud.pull().then(r => {
   if (!r || !r.state) { cloud.schedulePush(() => state); return; }
   const cloudAt = r.state.updatedAt || r.updatedAt || 0;
@@ -805,6 +824,7 @@ cloud.pull().then(r => {
   } else if ((state.updatedAt || 0) > cloudAt) {
     cloud.schedulePush(() => state);
   }
+  if (cloud.meta().pending) cloud.schedulePush(() => state);   // 上次沒傳完的補傳
 }).catch(() => {});
 
 // 斷線後補傳

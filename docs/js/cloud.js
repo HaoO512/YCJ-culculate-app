@@ -37,17 +37,24 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { 'x-key': getKey(), 'content-type': 'application/json', ...(opts.headers || {}) },
   });
-  if (!res.ok) throw new Error('sync ' + res.status);
+  if (!res.ok) {
+    let reason = 'HTTP ' + res.status;
+    try { const j = await res.json(); if (j.error) reason = j.error; } catch {}
+    const e = new Error(reason);
+    e.rejected = res.status >= 400 && res.status < 500;
+    throw e;
+  }
   return res.json();
 }
 
-// 拉雲端資料；回 {state, updatedAt} 或 null
+// 拉雲端資料；回 {state, updatedAt} 或 null。成功即算連線正常。
 export async function pull() {
   const r = await api('/data');
+  setMeta({ lastSync: Date.now(), lastError: null });
   return r && r.state ? r : null;
 }
 
-// 推上雲（去抖動 2 秒；失敗留待下次）
+// 推上雲（去抖動 2 秒；失敗留待下次，被伺服器拒絕會記下原因）
 let timer = null;
 export function schedulePush(getState, onDone) {
   clearTimeout(timer);
@@ -55,17 +62,18 @@ export function schedulePush(getState, onDone) {
     try {
       const state = getState();
       await api('/data', { method: 'PUT', body: JSON.stringify({ state, updatedAt: state.updatedAt || Date.now() }) });
-      setMeta({ lastSync: Date.now(), pending: false });
-    } catch {
-      setMeta({ pending: true });
+      setMeta({ lastSync: Date.now(), pending: false, lastError: null });
+    } catch (e) {
+      setMeta({ pending: true, lastError: e.rejected ? e.message : null });
     }
     if (onDone) onDone();
   }, 2000);
 }
 
 export async function pushNow(state) {
+  clearTimeout(timer);
   await api('/data', { method: 'PUT', body: JSON.stringify({ state, updatedAt: state.updatedAt || Date.now() }) });
-  setMeta({ lastSync: Date.now(), pending: false });
+  setMeta({ lastSync: Date.now(), pending: false, lastError: null });
 }
 
 function b64uToU8(s) {

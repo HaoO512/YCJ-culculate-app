@@ -81,7 +81,7 @@ export function parseXlsx(arrayBuffer) {
     if (dueDay === '月底' || dueDay === 'EOM') dueDay = 'EOM';
     else {
       dueDay = Number(dueDay);
-      if (!(dueDay >= 1 && dueDay <= 31)) errors.push(`${rowNo}：收息日要 1–31 或「月底」`);
+      if (!(Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31)) errors.push(`${rowNo}：收息日要 1–31 的整數或「月底」`);
     }
 
     const statusTxt = String(r['狀態'] || '正常').trim();
@@ -99,13 +99,18 @@ export function parseXlsx(arrayBuffer) {
     if (!(Number.isFinite(referralFee) && referralFee >= 0)) errors.push(`${rowNo}：介紹費無效`);
     if (!(Number.isFinite(appraisalFee) && appraisalFee >= 0)) errors.push(`${rowNo}：代書費無效`);
 
+    const finalReceived = r['結案實收'] === '' || r['結案實收'] == null ? null : Number(r['結案實收']);
+    const writeoff = r['壞帳沖銷'] === '' || r['壞帳沖銷'] == null ? null : Number(r['壞帳沖銷']);
+    if (finalReceived != null && !(Number.isFinite(finalReceived) && finalReceived >= 0)) errors.push(`${rowNo}：結案實收無效`);
+    if (writeoff != null && !(Number.isFinite(writeoff) && writeoff >= 0)) errors.push(`${rowNo}：壞帳沖銷無效`);
+
     loans.push({
       id: String(r['編號'] || '').trim() || newId(),
       name, principal, rate, startDate, dueDay, prepaidMonths,
       status: status || 'normal',
       overdueSince,
-      finalReceived: r['結案實收'] === '' || r['結案實收'] == null ? null : Number(r['結案實收']),
-      writeoff: r['壞帳沖銷'] === '' || r['壞帳沖銷'] == null ? null : Number(r['壞帳沖銷']),
+      finalReceived,
+      writeoff,
       referralFee, appraisalFee,
       note: String(r['備註'] || ''),
     });
