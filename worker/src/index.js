@@ -101,6 +101,8 @@ function buildReminders(state) {
   const msgs = [];
   for (const loan of state.loans || []) {
     if (loan.status !== 'normal') continue;
+    const s = parseYMD(loan.startDate);
+    if (cmpYMD([tY, tM, tD], s) < 0) continue; // 借款日還沒到
     const mi = monthlyInterest(loan);
     if (dueDayOf(tY, tM, loan.dueDay) === tD && !settled(state, loan, tY, tM)) {
       msgs.push({ title: '明天要收利息', body: `明天收 ${loan.name} 利息 $${mi.toLocaleString('en-US')}` });
