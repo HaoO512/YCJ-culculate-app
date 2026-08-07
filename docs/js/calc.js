@@ -85,8 +85,10 @@ export function settledInMonth(payments, loan, year, month) {
   return dueDateFor(year, month, loan.dueDay) <= pu;
 }
 
-// 下一個「真的要收」的收息日（跳過預收涵蓋期）
+// 下一個「真的要收」的收息日（跳過預收涵蓋期；不早於借款日）
 export function nextCollectDue(loan, from) {
+  const s = parseDate(loan.startDate);
+  if (from < s) from = s;
   let d = nextDue(loan, from);
   const pu = prepaidUntil(loan);
   if (pu && d <= pu) d = dueDateFor(pu.getFullYear(), pu.getMonth() + 1, loan.dueDay);
@@ -123,10 +125,11 @@ export function stats(state, now) {
     return parseDate(p.date).getFullYear() === now.getFullYear() ? s + p.amount : s;
   }, 0);
 
-  // 本月要收：排除被預收涵蓋的月份
+  // 本月要收：排除借款日之前、被預收涵蓋的月份
   const monthDue = normals.reduce((s, l) => {
-    const pu = prepaidUntil(l);
     const due = dueDateFor(now.getFullYear(), now.getMonth(), l.dueDay);
+    if (due < parseDate(l.startDate)) return s;
+    const pu = prepaidUntil(l);
     if (pu && due <= pu) return s;
     return s + monthlyInterest(l);
   }, 0);

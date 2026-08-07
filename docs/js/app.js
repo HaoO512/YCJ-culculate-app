@@ -373,8 +373,18 @@ function saveForm(id) {
   if (errs.length) { alert(errs.join('\n')); return; }
 
   if (id) {
-    Object.assign(loanById(id), { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, appraisalFee, note });
+    const l = loanById(id);
+    const remindChanged = l.status === 'normal' &&
+      (l.dueDay !== dueDay || l.principal !== principal || l.rate !== rate ||
+       l.name !== name || l.startDate !== startDate || (l.prepaidMonths || 0) !== prepaidMonths);
+    Object.assign(l, { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, appraisalFee, note });
     save(state); go('detail', { id });
+    if (remindChanged) {
+      setTimeout(() => {
+        downloadICS([l], `收息提醒-${l.name}.ics`);
+        alert('提醒內容有變，行事曆更新檔已下載：點開按「加入」即覆蓋舊提醒。');
+      }, 300);
+    }
   } else {
     const loan = {
       id: newId(), name, principal, rate, startDate, dueDay, prepaidMonths,
@@ -600,6 +610,8 @@ const actions = {
     if (!confirm(`${l.name} 恢復正常收息？（欠繳記錄清除）`)) return;
     l.status = 'normal'; l.overdueSince = null;
     commit();
+    downloadICS([l], `收息提醒-${l.name}.ics`);
+    setTimeout(() => alert('已恢復正常。\n行事曆檔已下載：點開按「加入」，每月提醒就接回來了。'), 300);
   },
   'to-legal'(el) {
     const l = loanById(el.dataset.id);
@@ -644,9 +656,11 @@ const actions = {
     const l = loanById(el.dataset.id);
     if (!confirm(`確定刪除 ${l.name} 這筆借款？收款記錄也會一起刪。`)) return;
     if (!confirm('再確認一次：刪了就救不回來（除非有 Excel 備份）。')) return;
+    downloadStopICS(l);
     state.loans = state.loans.filter(x => x.id !== l.id);
     state.payments = state.payments.filter(p => p.loanId !== l.id);
     save(state); go('people');
+    setTimeout(() => alert('已刪除。\n「停止提醒」檔已下載：點開按「加入」，行事曆的提醒才會跟著停。'), 300);
   },
 
   'ics-one'(el) {
