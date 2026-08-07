@@ -592,7 +592,8 @@ const actions = {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { alert('日期格式要像 2026-08-04'); return; }
     l.status = 'overdue'; l.overdueSince = d.trim();
     commit();
-    alert('已列入問題帳。\n記得按「停止行事曆提醒」，每月提醒才會停。');
+    downloadStopICS(l);
+    setTimeout(() => alert('已列入問題帳。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。'), 300);
   },
   'back-normal'(el) {
     const l = loanById(el.dataset.id);
@@ -628,14 +629,16 @@ const actions = {
     l.writeoff = Math.max(0, owed - got);
     l.status = 'closed';
     commit();
-    alert(`結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}\n記得按「停止行事曆提醒」。`);
+    downloadStopICS(l);
+    setTimeout(() => alert(`結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}\n「停止提醒」檔已自動下載：點開按「加入」。`), 300);
   },
   'close-normal'(el) {
     const l = loanById(el.dataset.id);
     if (!confirm(`${l.name} 還清本金 ${money(l.principal)}，結清這筆借款？`)) return;
     l.status = 'closed';
     commit();
-    alert('已結清。記得按「停止行事曆提醒」，每月提醒才會停。');
+    downloadStopICS(l);
+    setTimeout(() => alert('已結清。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。'), 300);
   },
   'delete-loan'(el) {
     const l = loanById(el.dataset.id);

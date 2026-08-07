@@ -51,7 +51,7 @@ export function buildStopICS(loan) {
     'BEGIN:VEVENT',
     `UID:loan-${loan.id}@loanapp`,
     `DTSTAMP:${icsDate(now)}T120000Z`,
-    'SEQUENCE:2',
+    `SEQUENCE:${Math.floor(Date.now() / 1000) + 100}`,
     `DTSTART;VALUE=DATE:${start}`,
     `RRULE:FREQ=MONTHLY;BYMONTHDAY=${byday};UNTIL=${icsDate(yesterday)}`,
     `SUMMARY:${esc(`（已停止）收${loan.name}利息`)}`,
