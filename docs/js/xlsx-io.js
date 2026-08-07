@@ -81,7 +81,7 @@ export function parseXlsx(arrayBuffer) {
     if (dueDay === '月底' || dueDay === 'EOM') dueDay = 'EOM';
     else {
       dueDay = Number(dueDay);
-      if (!(dueDay >= 1 && dueDay <= 28)) errors.push(`${rowNo}：收息日要 1–28 或「月底」`);
+      if (!(dueDay >= 1 && dueDay <= 31)) errors.push(`${rowNo}：收息日要 1–31 或「月底」`);
     }
 
     const statusTxt = String(r['狀態'] || '正常').trim();

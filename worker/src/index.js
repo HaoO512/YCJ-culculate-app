@@ -49,7 +49,11 @@ function tpeDateStr() {
 
 // ── 收息日計算（與 App 端 calc.js 同邏輯的精簡版）──
 function daysInMonth(y, m) { return new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); }
-function dueDayOf(y, m, dueDay) { return dueDay === 'EOM' ? daysInMonth(y, m) : dueDay; }
+// 29–31：當月沒有該號就退到月底
+function dueDayOf(y, m, dueDay) {
+  const last = daysInMonth(y, m);
+  return dueDay === 'EOM' ? last : Math.min(dueDay, last);
+}
 
 function cmpYMD(a, b) { // [y,m,d]
   return (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);

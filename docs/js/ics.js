@@ -11,9 +11,20 @@ function esc(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,');
 }
 
+// 每月重複規則：29/30 → 當月沒該號自動退到月底（BYSETPOS 取候選日中最後一個存在的）
+function rruleFor(dueDay, until) {
+  let core;
+  if (dueDay === 'EOM' || dueDay === 31) core = 'FREQ=MONTHLY;BYMONTHDAY=-1';
+  else if (dueDay >= 29) {
+    const days = [];
+    for (let d = 28; d <= dueDay; d++) days.push(d);
+    core = `FREQ=MONTHLY;BYMONTHDAY=${days.join(',')};BYSETPOS=-1`;
+  } else core = `FREQ=MONTHLY;BYMONTHDAY=${dueDay}`;
+  return 'RRULE:' + core + (until ? `;UNTIL=${until}` : '');
+}
+
 function vevent(loan) {
   const start = nextCollectDue(loan, today());
-  const byday = loan.dueDay === 'EOM' ? '-1' : String(loan.dueDay);
   const title = `收${loan.name}利息 ${money(monthlyInterest(loan))}`;
   return [
     'BEGIN:VEVENT',
@@ -21,7 +32,7 @@ function vevent(loan) {
     `DTSTAMP:${icsDate(today())}T000000Z`,
     `SEQUENCE:${Math.floor(Date.now() / 1000)}`,
     `DTSTART;VALUE=DATE:${icsDate(start)}`,
-    `RRULE:FREQ=MONTHLY;BYMONTHDAY=${byday}`,
+    rruleFor(loan.dueDay),
     `SUMMARY:${esc(title)}`,
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
@@ -41,7 +52,6 @@ function vevent(loan) {
 export function buildStopICS(loan) {
   const now = today();
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  const byday = loan.dueDay === 'EOM' ? '-1' : String(loan.dueDay);
   const start = loan.startDate ? loan.startDate.replace(/-/g, '') : icsDate(yesterday);
   return [
     'BEGIN:VCALENDAR',
@@ -53,7 +63,7 @@ export function buildStopICS(loan) {
     `DTSTAMP:${icsDate(now)}T120000Z`,
     `SEQUENCE:${Math.floor(Date.now() / 1000) + 100}`,
     `DTSTART;VALUE=DATE:${start}`,
-    `RRULE:FREQ=MONTHLY;BYMONTHDAY=${byday};UNTIL=${icsDate(yesterday)}`,
+    rruleFor(loan.dueDay, icsDate(yesterday)),
     `SUMMARY:${esc(`（已停止）收${loan.name}利息`)}`,
     'END:VEVENT',
     'END:VCALENDAR',

@@ -28,10 +28,12 @@ export function defaultReferral(principal, rate) {
 
 export const DEFAULT_APPRAISAL = 3000;
 
-// 某年某月的收息日（dueDay: 1–28 或 'EOM' 月底）。month 0-based。
+// 某年某月的收息日（dueDay: 1–31 或 'EOM' 月底）。month 0-based。
+// 29–31：當月有該號就用該號，沒有就退到當月最後一天（2 月 → 28/29）
 export function dueDateFor(year, month, dueDay) {
-  if (dueDay === 'EOM') return new Date(year, month + 1, 0);
-  return new Date(year, month, dueDay);
+  const last = new Date(year, month + 1, 0).getDate();
+  if (dueDay === 'EOM') return new Date(year, month, last);
+  return new Date(year, month, Math.min(dueDay, last));
 }
 
 // 從 from（含當天）起的下一個收息日

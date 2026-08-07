@@ -286,7 +286,7 @@ function viewForm() {
   const editing = route.id ? loanById(route.id) : null;
   const l = editing || {
     name: '', principal: '', rate: 2,
-    startDate: fmtDate(today()), dueDay: today().getDate() > 28 ? 'EOM' : today().getDate(),
+    startDate: fmtDate(today()), dueDay: today().getDate(),
     prepaidMonths: 3, referralFee: '', appraisalFee: DEFAULT_APPRAISAL, note: '',
   };
   const pm = l.prepaidMonths ?? 0;
@@ -294,7 +294,7 @@ function viewForm() {
     `<option value="${n}"${pm === n ? ' selected' : ''}>${n === 0 ? '不預收' : n + ' 個月'}</option>`).join('');
 
   const dayOptions = ['<option value="EOM"' + (l.dueDay === 'EOM' ? ' selected' : '') + '>月底</option>'];
-  for (let d = 1; d <= 28; d++) {
+  for (let d = 1; d <= 31; d++) {
     dayOptions.push(`<option value="${d}"${l.dueDay === d ? ' selected' : ''}>${d} 號</option>`);
   }
 
@@ -314,7 +314,7 @@ function viewForm() {
       <input id="f-start" type="date" value="${l.startDate}"></div>
     <div class="field"><label>收息日（每月幾號）</label>
       <select id="f-dueday">${dayOptions.join('')}</select>
-      <span class="hint">29–31 號請選「月底」，小月才不會漏</span></div>
+      <span class="hint">29–31 號：當月沒有該號時自動改當月最後一天</span></div>
     <div class="field"><label>簽約預收利息</label>
       <select id="f-prepaid">${pmOptions}</select>
       <span class="hint">簽約當天一次收走前幾個月利息，提醒自動從之後開始</span></div>
@@ -554,7 +554,7 @@ function render() {
     const startEl = document.getElementById('f-start');
     startEl.addEventListener('change', () => {
       const d = startEl.value ? Number(startEl.value.split('-')[2]) : null;
-      if (d) document.getElementById('f-dueday').value = d > 28 ? 'EOM' : String(d);
+      if (d) document.getElementById('f-dueday').value = String(d);
     });
   }
 }
