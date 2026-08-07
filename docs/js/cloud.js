@@ -14,7 +14,15 @@ export function getKey() {
   return k;
 }
 
-export function setKey(k) { localStorage.setItem(KEY_STORE, k.trim()); }
+export function setKey(k) {
+  const cur = localStorage.getItem(KEY_STORE);
+  if (cur === k.trim()) return;
+  localStorage.setItem(KEY_STORE, k.trim());
+  // 換了資料身分，同步狀態與推播登記歸零（推播要在新金鑰下重開）
+  localStorage.setItem(META_STORE, JSON.stringify({}));
+}
+
+export function cancelPush() { clearTimeout(timer); }
 
 export function meta() {
   try { return JSON.parse(localStorage.getItem(META_STORE)) || {}; } catch { return {}; }

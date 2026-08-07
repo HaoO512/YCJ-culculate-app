@@ -56,9 +56,17 @@ export function overduePeriods(loan, now) {
   return n;
 }
 
-// 累計欠息（單利）
-export function overdueInterest(loan, now) {
-  return overduePeriods(loan, now) * monthlyInterest(loan);
+// 欠繳期間已補繳的總額
+export function arrearsPaid(loan, payments) {
+  if (!loan.overdueSince) return 0;
+  return (payments || []).reduce((s, p) =>
+    p.loanId === loan.id && p.date >= loan.overdueSince ? s + p.amount : s, 0);
+}
+
+// 累計欠息（單利，扣掉欠繳期間的補繳，下限 0）
+export function overdueInterest(loan, now, payments) {
+  const gross = overduePeriods(loan, now) * monthlyInterest(loan);
+  return Math.max(0, gross - arrearsPaid(loan, payments));
 }
 
 // 簽約後第一個收息日（嚴格在借款日之後）
@@ -143,7 +151,7 @@ export function stats(state, now) {
   const referralTotal = state.loans.reduce((s, l) => s + (l.referralFee || 0), 0);
   const appraisalTotal = state.loans.reduce((s, l) => s + (l.appraisalFee || 0), 0);
 
-  const overdueInt = problems.reduce((s, l) => s + overdueInterest(l, now), 0);
+  const overdueInt = problems.reduce((s, l) => s + overdueInterest(l, now, state.payments), 0);
   const overduePrincipal = problems.reduce((s, l) => s + l.principal, 0);
 
   const writeoffTotal = state.loans.reduce((s, l) => s + (l.writeoff || 0), 0);

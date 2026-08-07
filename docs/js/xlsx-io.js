@@ -35,7 +35,7 @@ export function exportXlsx(state) {
       '未還本金': l.principal,
       '停繳日': l.overdueSince || '',
       '欠繳期數': overduePeriods(l, now),
-      '累計欠息': overdueInterest(l, now),
+      '累計欠息': overdueInterest(l, now, state.payments),
       '狀態': STATUS_TXT[l.status],
       '備註': l.note || '',
     }));
@@ -93,7 +93,11 @@ export function parseXlsx(arrayBuffer) {
       errors.push(`${rowNo}：欠繳／法院狀態要填停繳日`);
 
     const prepaidMonths = Number(r['預收月數'] || 0);
-    if (!(prepaidMonths >= 0 && prepaidMonths <= 12)) errors.push(`${rowNo}：預收月數不合理`);
+    if (!(Number.isInteger(prepaidMonths) && prepaidMonths >= 0 && prepaidMonths <= 12)) errors.push(`${rowNo}：預收月數要 0–12 的整數`);
+    const referralFee = Number(r['介紹費'] || 0);
+    const appraisalFee = Number(r['代書費'] || 0);
+    if (!(Number.isFinite(referralFee) && referralFee >= 0)) errors.push(`${rowNo}：介紹費無效`);
+    if (!(Number.isFinite(appraisalFee) && appraisalFee >= 0)) errors.push(`${rowNo}：代書費無效`);
 
     loans.push({
       id: String(r['編號'] || '').trim() || newId(),
@@ -102,10 +106,16 @@ export function parseXlsx(arrayBuffer) {
       overdueSince,
       finalReceived: r['結案實收'] === '' || r['結案實收'] == null ? null : Number(r['結案實收']),
       writeoff: r['壞帳沖銷'] === '' || r['壞帳沖銷'] == null ? null : Number(r['壞帳沖銷']),
-      referralFee: Number(r['介紹費'] || 0),
-      appraisalFee: Number(r['代書費'] || 0),
+      referralFee, appraisalFee,
       note: String(r['備註'] || ''),
     });
+  });
+
+  // 重複編號檢查
+  const seen = new Set();
+  loans.forEach((l, i) => {
+    if (seen.has(l.id)) errors.push(`借款主表第 ${i + 2} 列：編號「${l.id}」重複`);
+    seen.add(l.id);
   });
 
   const ids = new Set(loans.map(l => l.id));
@@ -119,8 +129,10 @@ export function parseXlsx(arrayBuffer) {
       const amount = Number(r['金額']);
       if (!ids.has(loanId)) errors.push(`${rowNo}：借款編號「${loanId}」對不上主表`);
       if (!date) errors.push(`${rowNo}：日期格式錯`);
-      if (!(amount > 0)) errors.push(`${rowNo}：金額不是正數`);
-      payments.push({ id: String(r['編號'] || '').trim() || newId(), loanId, date, amount });
+      if (!(Number.isFinite(amount) && amount > 0)) errors.push(`${rowNo}：金額不是正數`);
+      const pid = String(r['編號'] || '').trim() || newId();
+      if (payments.some(p => p.id === pid)) errors.push(`${rowNo}：收款編號「${pid}」重複`);
+      payments.push({ id: pid, loanId, date, amount });
     });
   }
 

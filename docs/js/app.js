@@ -106,7 +106,7 @@ function viewHome() {
     return `
       <button class="${cls}" data-action="open-loan" data-id="${l.id}">
         <span class="l"><small>${x.day}日${label ? '·' + label : ''}</small>${esc(l.name)}${paidMark}</span>
-        <span class="r">${money(x.problem ? overdueInterest(l, now) : monthlyInterest(l))}</span>
+        <span class="r">${money(x.problem ? overdueInterest(l, now, state.payments) : monthlyInterest(l))}</span>
       </button>`;
   }).join('');
 
@@ -218,7 +218,7 @@ function viewDetail() {
       </div>`;
   } else if (l.status === 'overdue' || l.status === 'legal') {
     const periods = overduePeriods(l, now);
-    const accrued = overdueInterest(l, now);
+    const accrued = overdueInterest(l, now, state.payments);
     statusBlock = `
       <div class="card debt-sum">
         <p class="card-label" style="color:var(--red)">欠繳中${l.status === 'legal' ? '（法院處理）' : ''}</p>
@@ -303,6 +303,7 @@ function viewForm() {
       <button class="back" data-action="back">‹</button>
       <h1>${editing ? '編輯借款' : '新增借款'}</h1>
     </div>
+    ${editing ? '<p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
 
     <div class="field"><label>借款人姓名</label>
       <input id="f-name" value="${esc(l.name)}" placeholder="王小明"></div>
@@ -367,9 +368,11 @@ function saveForm(id) {
 
   const errs = [];
   if (!name) errs.push('姓名要填');
-  if (!(principal > 0)) errs.push('本金要是正數');
-  if (!(rate > 0 && rate <= 20)) errs.push('月利率不合理');
+  if (!(Number.isFinite(principal) && principal > 0)) errs.push('本金要是正數');
+  if (!(Number.isFinite(rate) && rate > 0 && rate <= 20)) errs.push('月利率不合理');
   if (!startDate) errs.push('借款日期要填');
+  if (!(Number.isFinite(referralFee) && referralFee >= 0)) errs.push('介紹費不能是負數');
+  if (!(Number.isFinite(appraisalFee) && appraisalFee >= 0)) errs.push('代書費不能是負數');
   if (errs.length) { alert(errs.join('\n')); return; }
 
   if (id) {
@@ -413,7 +416,7 @@ function viewProblems() {
   const probs = state.loans.filter(isProblem);
   const cards = probs.map(l => {
     const periods = overduePeriods(l, now);
-    const accrued = overdueInterest(l, now);
+    const accrued = overdueInterest(l, now, state.payments);
     return `
       <div class="card debt-card" data-action="open-loan" data-id="${l.id}">
         <div class="top">
@@ -599,8 +602,10 @@ const actions = {
     const l = loanById(el.dataset.id);
     const d = prompt('從哪天開始停繳？（格式 2026-08-04）', fmtDate(today()));
     if (!d) return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { alert('日期格式要像 2026-08-04'); return; }
-    l.status = 'overdue'; l.overdueSince = d.trim();
+    const t = d.trim();
+    const dd = /^\d{4}-\d{2}-\d{2}$/.test(t) ? parseDate(t) : null;
+    if (!dd || fmtDate(dd) !== t) { alert('這不是真實日期，格式要像 2026-08-04'); return; }
+    l.status = 'overdue'; l.overdueSince = t;
     commit();
     downloadStopICS(l);
     setTimeout(() => alert('已列入問題帳。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。'), 300);
@@ -621,7 +626,7 @@ const actions = {
   },
   'repay-overdue'(el) {
     const l = loanById(el.dataset.id);
-    const accrued = overdueInterest(l, today());
+    const accrued = overdueInterest(l, today(), state.payments);
     const v = prompt(`收到多少？（目前累計欠息 ${money(accrued)}）`, String(accrued));
     if (v == null) return;
     const amount = Number(v);
@@ -632,7 +637,7 @@ const actions = {
   'settle-legal'(el) {
     const l = loanById(el.dataset.id);
     const now = today();
-    const owed = l.principal + overdueInterest(l, now);
+    const owed = l.principal + overdueInterest(l, now, state.payments);
     const v = prompt(`結案最後實拿多少？\n（應收 = 本金＋欠息 = ${money(owed)}）`, String(owed));
     if (v == null) return;
     const got = Number(v);
@@ -716,6 +721,8 @@ const actions = {
   async 'cloud-set-key'() {
     const k = prompt('輸入另一組同步金鑰（會改連到那份資料）：');
     if (!k || k.trim().length < 24) { if (k != null) alert('金鑰長度不對'); return; }
+    const oldKey = cloud.getKey();
+    cloud.cancelPush();
     cloud.setKey(k);
     try {
       const r = await cloud.pull();
@@ -729,7 +736,10 @@ const actions = {
         alert('這組金鑰雲端還沒有資料，已把目前手機的資料傳上去。');
         render();
       }
-    } catch { alert('連不上雲端，檢查網路或金鑰。'); }
+    } catch {
+      cloud.setKey(oldKey);
+      alert('連不上雲端，金鑰已還原成原本那把。檢查網路或金鑰再試。');
+    }
   },
 };
 

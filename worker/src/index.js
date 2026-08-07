@@ -104,16 +104,19 @@ function buildReminders(state) {
   const tY = tm.getUTCFullYear(), tM = tm.getUTCMonth(), tD = tm.getUTCDate();
   const msgs = [];
   for (const loan of state.loans || []) {
-    if (loan.status !== 'normal') continue;
-    const s = parseYMD(loan.startDate);
-    if (cmpYMD([tY, tM, tD], s) < 0) continue; // 借款日還沒到
-    const mi = monthlyInterest(loan);
-    if (dueDayOf(tY, tM, loan.dueDay) === tD && !settled(state, loan, tY, tM)) {
-      msgs.push({ title: '明天要收利息', body: `明天收 ${loan.name} 利息 $${mi.toLocaleString('en-US')}` });
-    }
-    if (dueDayOf(y, m, loan.dueDay) === d && !settled(state, loan, y, m)) {
-      msgs.push({ title: '今天要收利息', body: `今天收 ${loan.name} 利息 $${mi.toLocaleString('en-US')}` });
-    }
+    try {
+      if (loan.status !== 'normal') continue;
+      const s = parseYMD(loan.startDate);
+      const mi = monthlyInterest(loan);
+      // 明天到期：明天不得早於借款日
+      if (cmpYMD([tY, tM, tD], s) >= 0 && dueDayOf(tY, tM, loan.dueDay) === tD && !settled(state, loan, tY, tM)) {
+        msgs.push({ title: '明天要收利息', body: `明天收 ${loan.name} 利息 $${mi.toLocaleString('en-US')}` });
+      }
+      // 今天到期：今天不得早於借款日
+      if (cmpYMD([y, m, d], s) >= 0 && dueDayOf(y, m, loan.dueDay) === d && !settled(state, loan, y, m)) {
+        msgs.push({ title: '今天要收利息', body: `今天收 ${loan.name} 利息 $${mi.toLocaleString('en-US')}` });
+      }
+    } catch { /* 單筆資料壞掉不影響其他借款 */ }
   }
   return msgs;
 }
@@ -194,6 +197,39 @@ async function pushAll(uid, msgs, env) {
   return sent;
 }
 
+// ── 上傳資料驗證 ──
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function validDate(s) {
+  if (typeof s !== 'string' || !DATE_RE.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  return m >= 1 && m <= 12 && d >= 1 && d <= daysInMonth(y, m - 1);
+}
+function validMoney(n) { return typeof n === 'number' && Number.isFinite(n) && n >= 0; }
+
+function validateState(state) {
+  if (!Array.isArray(state.payments)) return 'payments 不是陣列';
+  if (state.loans.length > 5000 || state.payments.length > 100000) return '資料量異常';
+  for (const l of state.loans) {
+    if (typeof l.name !== 'string' || !l.name.trim()) return '借款缺姓名';
+    if (!(typeof l.principal === 'number' && Number.isFinite(l.principal) && l.principal > 0)) return `${l.name}：本金無效`;
+    if (!(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0 && l.rate <= 50)) return `${l.name}：利率無效`;
+    if (!validDate(l.startDate)) return `${l.name}：借款日期無效`;
+    if (!(l.dueDay === 'EOM' || (Number.isInteger(l.dueDay) && l.dueDay >= 1 && l.dueDay <= 31))) return `${l.name}：收息日無效`;
+    if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) return `${l.name}：狀態無效`;
+    if ((l.status === 'overdue' || l.status === 'legal') && !validDate(l.overdueSince)) return `${l.name}：停繳日無效`;
+    if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) return `${l.name}：預收月數無效`;
+    if (l.referralFee != null && !validMoney(l.referralFee)) return `${l.name}：介紹費無效`;
+    if (l.appraisalFee != null && !validMoney(l.appraisalFee)) return `${l.name}：代書費無效`;
+  }
+  const ids = new Set(state.loans.map(l => l.id));
+  for (const p of state.payments) {
+    if (!ids.has(p.loanId)) return '收款記錄對不上借款';
+    if (!validDate(p.date)) return '收款日期無效';
+    if (!(typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount > 0)) return '收款金額無效';
+  }
+  return null;
+}
+
 // ── HTTP ──
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -225,6 +261,8 @@ export default {
       let parsed;
       try { parsed = JSON.parse(body); } catch { return json({ error: 'bad json' }, 400); }
       if (!parsed.state || !Array.isArray(parsed.state.loans)) return json({ error: 'bad shape' }, 400);
+      const verr = validateState(parsed.state);
+      if (verr) return json({ error: verr }, 400);
       // 當日第一次寫入前，把舊資料存成快照
       const day = tpeDateStr();
       const snapKey = `snap:${uid}:${day}`;
@@ -273,14 +311,15 @@ export default {
     ctx.waitUntil((async () => {
       const list = await env.KV.list({ prefix: 'data:' });
       for (const k of list.keys) {
-        const uid = k.name.slice(5);
-        const raw = await env.KV.get(k.name);
-        if (!raw) continue;
-        let state;
-        try { state = JSON.parse(raw).state; } catch { continue; }
-        if (!state) continue;
-        const msgs = buildReminders(state);
-        if (msgs.length) await pushAll(uid, msgs, env);
+        try {
+          const uid = k.name.slice(5);
+          const raw = await env.KV.get(k.name);
+          if (!raw) continue;
+          const state = JSON.parse(raw).state;
+          if (!state) continue;
+          const msgs = buildReminders(state);
+          if (msgs.length) await pushAll(uid, msgs, env);
+        } catch { /* 單一帳戶壞資料不影響其他人 */ }
       }
     })());
   },
