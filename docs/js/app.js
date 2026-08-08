@@ -30,7 +30,15 @@ function esc(s) {
   ));
 }
 
+const TAB_VIEWS = ['home', 'people', 'problems', 'stats'];
+let lastTab = 'home';                       // 詳情/表單/設定時，底部仍亮來源分頁
+const navFrom = { settings: 'home', detail: 'home', form: 'people' };
+
 function go(view, params = {}) {
+  if (view === 'settings' && route.view !== 'settings') navFrom.settings = route.view;
+  if (view === 'detail' && TAB_VIEWS.includes(route.view)) navFrom.detail = route.view;
+  if (view === 'form' && !params.id) navFrom.form = TAB_VIEWS.includes(route.view) ? route.view : 'people';
+  if (TAB_VIEWS.includes(view)) lastTab = view;
   route = { view, ...params };
   render();
   window.scrollTo(0, 0);
@@ -125,7 +133,8 @@ function viewHome() {
         <div class="rowlist">${coming.map(rowOf).join('')}</div>`;
     }
     if (!missed.length && !coming.length) {
-      todoHtml = '<div class="empty" style="padding:20px 10px">今天沒有要處理的 ✓</div>';
+      const hasProblems = state.loans.some(isProblem);
+      todoHtml = `<div class="empty" style="padding:20px 10px">${hasProblems ? '今天沒有新的收息（欠繳的在「欠繳」分頁）' : '今天沒有新的收息 ✓'}</div>`;
     }
   }
 
@@ -449,7 +458,7 @@ function viewStats() {
   const now = today();
   if (!statsCursor) statsCursor = { y: now.getFullYear(), m: now.getMonth() };
   return `
-    <div class="title-row"><h1 class="title">月報</h1>${gearBtn()}</div>
+    <div class="title-row"><h1 class="title">帳務</h1>${gearBtn()}</div>
     <div class="seg">
       <button class="${statsTab === 'month' ? 'active' : ''}" data-action="stats-tab" data-tab="month">月報</button>
       <button class="${statsTab === 'overview' ? 'active' : ''}" data-action="stats-tab" data-tab="overview">總覽</button>
@@ -638,7 +647,8 @@ function gearBtn() {
 
 function renderTabbar() {
   const probCount = state.loans.filter(isProblem).length;
-  const active = v => (route.view === v || (v === 'home' && route.view === 'detail')) ? ' active' : '';
+  const current = TAB_VIEWS.includes(route.view) ? route.view : lastTab;
+  const active = v => current === v ? ' active' : '';
   $tabbar.innerHTML = `
     <button class="tab${active('home')}" data-action="go" data-view="home">${ICONS.home}今天</button>
     <button class="tab${active('people')}" data-action="go" data-view="people">${ICONS.people}借款</button>
@@ -678,7 +688,12 @@ const actions = {
     if (el.dataset.view === 'home') { calSelected = null; calCursor = null; }
     go(el.dataset.view);
   },
-  back() { history.length > 1 ? go(routeBack()) : go('home'); },
+  back() {
+    if (route.view === 'settings') { go(navFrom.settings); return; }
+    if (route.view === 'form') { route.id ? go('detail', { id: route.id }) : go(navFrom.form); return; }
+    if (route.view === 'detail') { go(navFrom.detail); return; }
+    go('home');
+  },
   'open-loan'(el) { go('detail', { id: el.dataset.id }); },
   edit(el) { go('form', { id: el.dataset.id }); },
   'save-form'(el) { saveForm(el.dataset.id || null); },
@@ -867,10 +882,6 @@ const actions = {
     }
   },
 };
-
-function routeBack() {
-  return route.view === 'form' && route.id ? 'detail' : 'home';
-}
 
 function shiftMonth(delta) {
   const now = today();

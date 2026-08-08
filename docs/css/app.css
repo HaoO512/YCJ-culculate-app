@@ -308,6 +308,24 @@ details.acc .acc-body { padding: 0 16px 16px; display: flex; flex-direction: col
 }
 .tab.add .fab svg { width: 17px; height: 17px; stroke: #fff; stroke-width: 2.8; }
 
+/* 鍵盤焦點：所有可按元素 */
+button:focus-visible, select:focus-visible, input:focus-visible,
+textarea:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 窄機：三欄改三列，金額不擠壓 */
+@media (max-width: 380px) {
+  .triple { flex-direction: column; }
+  .triple > div {
+    display: flex; justify-content: space-between; align-items: baseline;
+    text-align: left; padding: 10px 2px;
+  }
+  .triple > div + div { border-left: 0; border-top: 1px solid var(--line); }
+  .triple .n { margin: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }
 }
