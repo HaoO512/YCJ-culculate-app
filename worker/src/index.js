@@ -223,7 +223,8 @@ function validateState(state) {
     if (!(l.dueDay === 'EOM' || (Number.isInteger(l.dueDay) && l.dueDay >= 1 && l.dueDay <= 31))) return `${l.name}：收息日無效`;
     if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) return `${l.name}：狀態無效`;
     if ((l.status === 'overdue' || l.status === 'legal') && !validDate(l.overdueSince)) return `${l.name}：停繳日無效`;
-    if (l.closedDate != null && !validDate(l.closedDate)) return `${l.name}：結清日無效`;
+    if (l.overdueSince != null && validDate(l.overdueSince) && l.overdueSince < l.startDate) return `${l.name}：停繳日早於借款日`;
+    if (l.closedDate != null && (!validDate(l.closedDate) || l.closedDate < l.startDate)) return `${l.name}：結清日無效`;
     if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) return `${l.name}：預收月數無效`;
     if (l.referralFee != null && !validMoney(l.referralFee)) return `${l.name}：介紹費無效`;
     if (l.appraisalFee != null && !validMoney(l.appraisalFee)) return `${l.name}：代書費無效`;
@@ -234,6 +235,7 @@ function validateState(state) {
     payIds.add(p.id);
     if (!loanIds.has(p.loanId)) return '收款記錄對不上借款';
     if (!validDate(p.date)) return '收款日期無效';
+    if (p.dueDate != null && !validDate(p.dueDate)) return '收款歸屬期無效';
     if (!(typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount > 0)) return '收款金額無效';
   }
   return null;

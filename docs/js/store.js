@@ -25,7 +25,11 @@ export function load() {
       if (!(l.dueDay === 'EOM' || (Number.isInteger(l.dueDay) && l.dueDay >= 1 && l.dueDay <= 31))) throw new Error('bad dueDay');
       if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) throw new Error('bad status');
       if ((l.status === 'overdue' || l.status === 'legal') && !dateOk(l.overdueSince)) throw new Error('bad overdueSince');
-      if (l.closedDate != null && !dateOk(l.closedDate)) throw new Error('bad closedDate');
+      if (l.overdueSince != null && dateOk(l.overdueSince) && l.overdueSince < l.startDate) throw new Error('overdueSince before start');
+      if (l.closedDate != null && (!dateOk(l.closedDate) || l.closedDate < l.startDate)) throw new Error('bad closedDate');
+      if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) throw new Error('bad prepaidMonths');
+      const moneyOk = v => v == null || (Number.isFinite(v) && v >= 0);
+      if (!moneyOk(l.referralFee) || !moneyOk(l.appraisalFee) || !moneyOk(l.finalReceived) || !moneyOk(l.writeoff)) throw new Error('bad fee');
     }
     const payIds = new Set();
     for (const p of s.payments) {
@@ -33,6 +37,7 @@ export function load() {
       payIds.add(p.id);
       if (!loanIds.has(p.loanId)) throw new Error('orphan payment');
       if (!dateOk(p.date) || !(Number.isFinite(p.amount) && p.amount > 0)) throw new Error('bad payment');
+      if (p.dueDate != null && !dateOk(p.dueDate)) throw new Error('bad payment dueDate');
     }
     return s;
   } catch {

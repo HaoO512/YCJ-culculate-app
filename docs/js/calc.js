@@ -107,11 +107,12 @@ export function nextCollectDue(loan, from) {
   return d;
 }
 
-// 該月實收總額
+// 該月「歸屬」收款總額 —— 判斷哪一期收清用歸屬期（dueDate），沒有就用收款日
+// 現金流（月報入帳、統計）另外看真收款日 p.date，兩者語意分開
 export function monthPaidAmount(payments, loanId, year, month) {
   return payments.reduce((s, p) => {
     if (p.loanId !== loanId) return s;
-    const d = parseDate(p.date);
+    const d = parseDate(p.dueDate || p.date);
     return d.getFullYear() === year && d.getMonth() === month ? s + p.amount : s;
   }, 0);
 }

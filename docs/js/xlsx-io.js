@@ -48,6 +48,7 @@ export function exportXlsx(state) {
     '借款編號': p.loanId,
     '姓名': nameOf(p.loanId),
     '日期': p.date,
+    '歸屬期': p.dueDate || '',
     '金額': p.amount,
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows), '收款記錄');
@@ -141,7 +142,9 @@ export function parseXlsx(arrayBuffer) {
       if (!(Number.isFinite(amount) && amount > 0)) errors.push(`${rowNo}：金額不是正數`);
       const pid = String(r['編號'] || '').trim() || newId();
       if (payments.some(p => p.id === pid)) errors.push(`${rowNo}：收款編號「${pid}」重複`);
-      payments.push({ id: pid, loanId, date, amount });
+      const dueDate = r['歸屬期'] ? normDate(r['歸屬期']) : null;
+      if (r['歸屬期'] && !dueDate) errors.push(`${rowNo}：歸屬期格式錯`);
+      payments.push({ id: pid, loanId, date, ...(dueDate ? { dueDate } : {}), amount });
     });
   }
 

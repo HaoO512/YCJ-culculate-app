@@ -47,11 +47,13 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-// 拉雲端資料；回 {state, updatedAt} 或 null。成功即算連線正常。
+// 拉雲端資料；回 {state, updatedAt} 或 null。
+// cloudExists 只在「雲端真的有帳戶」時才設 —— lastSync 只代表連線成功，不能拿來判斷帳戶存在
 export async function pull() {
   const r = await api('/data');
-  setMeta({ lastSync: Date.now(), lastError: null });
-  return r && r.state ? r : null;
+  const exists = !!(r && r.state);
+  setMeta({ lastSync: Date.now(), lastError: null, ...(exists ? { cloudExists: true } : {}) });
+  return exists ? r : null;
 }
 
 // 推上雲（去抖動 2 秒；失敗留待下次，被伺服器拒絕會記下原因）
@@ -62,7 +64,7 @@ export function schedulePush(getState, onDone) {
     try {
       const state = getState();
       await api('/data', { method: 'PUT', body: JSON.stringify({ state, updatedAt: state.updatedAt || Date.now() }) });
-      setMeta({ lastSync: Date.now(), pending: false, lastError: null });
+      setMeta({ lastSync: Date.now(), pending: false, lastError: null, cloudExists: true });
     } catch (e) {
       setMeta({ pending: true, lastError: e.rejected ? e.message : null });
     }
@@ -73,7 +75,7 @@ export function schedulePush(getState, onDone) {
 export async function pushNow(state) {
   clearTimeout(timer);
   await api('/data', { method: 'PUT', body: JSON.stringify({ state, updatedAt: state.updatedAt || Date.now() }) });
-  setMeta({ lastSync: Date.now(), pending: false, lastError: null });
+  setMeta({ lastSync: Date.now(), pending: false, lastError: null, cloudExists: true });
 }
 
 function b64uToU8(s) {

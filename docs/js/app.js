@@ -56,6 +56,14 @@ function dueDayTxt(d) { return d === 'EOM' ? '月底' : `${d} 號`; }
 
 function mdTxt(d) { return `${d.getMonth() + 1}月${d.getDate()}日`; }
 
+// 收款若歸屬到別的月份（補繳），列出「補X/X期」標記
+function periodTag(p) {
+  if (!p.dueDate) return '';
+  const a = parseDate(p.dueDate), b = parseDate(p.date);
+  if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()) return '';
+  return `<span style="font-size:14px;color:var(--sub);font-weight:700">補${a.getMonth() + 1}/${a.getDate()}期</span>`;
+}
+
 // ───────────────────────── 首頁 ─────────────────────────
 
 function viewHome() {
@@ -243,6 +251,7 @@ function viewDetail() {
   const payRows = pays.map(p => `
     <div class="h-row">
       <span>${mdTxt(parseDate(p.date))}</span>
+      ${periodTag(p)}
       <span class="amount">${money(p.amount)}</span>
       <span class="ok-mark">✓</span>
       <button class="del" data-action="del-payment" data-id="${p.id}" aria-label="刪除">✕</button>
@@ -311,6 +320,7 @@ function viewDetail() {
   const recent3 = pays.slice(0, 3).map(p => `
     <div class="h-row">
       <span>${mdTxt(parseDate(p.date))}</span>
+      ${periodTag(p)}
       <span class="amount">${money(p.amount)}</span>
       <span class="ok-mark">✓</span>
     </div>`).join('');
@@ -553,7 +563,7 @@ function statsMonthView(now) {
   const payRows = rp.payList.map(p => `
     <div class="h-row">
       <span>${mdTxt(parseDate(p.date))}</span>
-      <span style="flex:1;font-weight:700">${esc(nameOf(p.loanId))}</span>
+      <span style="flex:1;font-weight:700">${esc(nameOf(p.loanId))} ${periodTag(p)}</span>
       <span class="amount">${money(p.amount)}</span>
       <span class="ok-mark">✓</span>
     </div>`).join('');
@@ -799,7 +809,12 @@ const actions = {
     const l = loanById(el.dataset.id);
     const mi = monthlyInterest(l);
     if (!confirm(`記一筆：今天收到 ${l.name} 利息 ${money(mi)}？`)) return;
-    state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(today()), amount: mi });
+    const now0 = today();
+    state.payments.push({
+      id: newId(), loanId: l.id, date: fmtDate(now0),
+      dueDate: fmtDate(dueDateFor(now0.getFullYear(), now0.getMonth(), l.dueDay)),
+      amount: mi,
+    });
     commit();
   },
   'receive-missed'(el) {
@@ -814,9 +829,10 @@ const actions = {
       d = dueDateFor(d.getFullYear(), d.getMonth() + 1, l.dueDay);
     }
     if (!list.length) { render(); return; }
-    if (!confirm(`補收 ${list.length} 期，共 ${money(mi * list.length)}？\n（${list.map(x => (x.getMonth() + 1) + '/' + x.getDate()).join('、')}）\n每期會記在原本的收息日。`)) return;
+    if (!confirm(`補收 ${list.length} 期，共 ${money(mi * list.length)}？\n（補 ${list.map(x => (x.getMonth() + 1) + '/' + x.getDate()).join('、')} 期）\n收款日記今天，各期歸屬原收息日。`)) return;
+    const todayStr = fmtDate(today());
     for (const dd of list) {
-      state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(dd), amount: mi });
+      state.payments.push({ id: newId(), loanId: l.id, date: todayStr, dueDate: fmtDate(dd), amount: mi });
     }
     commit();
   },
@@ -1070,9 +1086,10 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
-// 只有真的有帳（或已建立過雲端帳戶）才上傳 —— 路人打開網頁不佔雲端名額
+// 只有真的有帳（或雲端帳戶確實存在）才上傳 —— 路人打開網頁不佔雲端名額
+// 注意：lastSync 只代表連過線，不代表帳戶存在，不能拿來判斷
 function shouldSync() {
-  return state.loans.length > 0 || state.payments.length > 0 || !!cloud.meta().lastSync;
+  return state.loans.length > 0 || state.payments.length > 0 || !!cloud.meta().cloudExists;
 }
 
 // 雲端同步：每次存檔自動上傳（2 秒去抖動）
