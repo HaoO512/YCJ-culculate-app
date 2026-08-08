@@ -95,7 +95,7 @@ function viewHome() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dotsHere = dues.filter(x => x.day === d);
     const dots = dotsHere.length
-      ? `<span class="dots">${dotsHere.map(x => `<i class="dot ${x.problem ? 'r' : 'g'}"></i>`).join('')}</span>`
+      ? `<span class="dots">${dotsHere.slice(0, 3).map(x => `<i class="dot ${x.problem ? 'r' : 'g'}"></i>`).join('')}${dotsHere.length > 3 ? `<i class="dotmore">+${dotsHere.length - 3}</i>` : ''}</span>`
       : '';
     const cls = ['day'];
     if (isThisMonth && d === now.getDate()) cls.push('today');
@@ -252,13 +252,26 @@ function viewDetail() {
   let primary = '';
   let more = '';
   if (l.status === 'normal') {
-    primary = `
-      <button class="btn green" data-action="receive" data-id="${l.id}" ${paid ? 'disabled' : ''}>
-        ${byPrepaid ? '✓ 本月在預收範圍內' : paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
-      </button>`;
+    // 有漏收的期：主要動作變成「補收／標記欠繳」，符合追款流程
+    const missedItem = missedDues(state, now).find(x => x.loan.id === l.id);
+    if (missedItem) {
+      primary = `
+        <div class="card debt-sum">
+          <p class="card-label" style="color:var(--red)">漏了 ${missedItem.count} 期沒記</p>
+          <p class="num">${money(missedItem.amount)}</p>
+          <p class="sub">${mdTxt(missedItem.first)} 起，每期 ${money(mi)}</p>
+        </div>
+        <button class="btn green" data-action="receive-missed" data-id="${l.id}">收到補繳，記 ${missedItem.count} 期</button>
+        <button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">沒收到錢，標記欠繳</button>`;
+    } else {
+      primary = `
+        <button class="btn green" data-action="receive" data-id="${l.id}" ${paid ? 'disabled' : ''}>
+          ${byPrepaid ? '✓ 本月在預收範圍內' : paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
+        </button>`;
+    }
     more = `
         <button class="btn outline-grey" data-action="ics-one" data-id="${l.id}">加到行事曆（每月提醒）</button>
-        <button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>
+        ${missedItem ? '' : `<button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>`}
         <button class="btn outline-grey" data-action="close-normal" data-id="${l.id}">結清還本</button>
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
   } else if (l.status === 'overdue' || l.status === 'legal') {
@@ -789,6 +802,24 @@ const actions = {
     state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(today()), amount: mi });
     commit();
   },
+  'receive-missed'(el) {
+    const l = loanById(el.dataset.id);
+    const mi = monthlyInterest(l);
+    // 重走一次漏收清單，每期記在原收息日，月報才對得上
+    const list = [];
+    let d = nextCollectDue(l, parseDate(l.startDate));
+    let guard = 0;
+    while (d < today() && guard++ < 36) {
+      if (!settledInMonth(state.payments, l, d.getFullYear(), d.getMonth())) list.push(new Date(d));
+      d = dueDateFor(d.getFullYear(), d.getMonth() + 1, l.dueDay);
+    }
+    if (!list.length) { render(); return; }
+    if (!confirm(`補收 ${list.length} 期，共 ${money(mi * list.length)}？\n（${list.map(x => (x.getMonth() + 1) + '/' + x.getDate()).join('、')}）\n每期會記在原本的收息日。`)) return;
+    for (const dd of list) {
+      state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(dd), amount: mi });
+    }
+    commit();
+  },
   'del-payment'(el) {
     const p = state.payments.find(x => x.id === el.dataset.id);
     if (!p) return;
@@ -811,10 +842,15 @@ const actions = {
     if (!dd || fmtDate(dd) !== t) { alert('這不是真實日期，格式要像 2026-08-04'); return; }
     if (dd < parseDate(l.startDate)) { alert('停繳日不能早於借款日（' + l.startDate + '）'); return; }
     if (dd > now0) { alert('停繳日不能是未來'); return; }
-    l.status = 'overdue'; l.overdueSince = t;
+    // 自動對齊到收息日：欠息只能從「沒繳的那個收息日」起算，隨便填 8/7 會少算一期
+    let snap = dueDateFor(dd.getFullYear(), dd.getMonth(), l.dueDay);
+    if (snap > dd) snap = dueDateFor(dd.getFullYear(), dd.getMonth() - 1, l.dueDay);
+    if (snap < parseDate(l.startDate)) { alert('這個日期之前還沒有收息日，確認一下借款日。'); return; }
+    const final = fmtDate(snap);
+    l.status = 'overdue'; l.overdueSince = final;
     commit();
     downloadStopICS(l);
-    setTimeout(() => alert('已列入問題帳。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。'), 300);
+    setTimeout(() => alert(`已列入問題帳，欠息從收息日 ${final} 起算${final !== t ? `（你填 ${t}，已自動對齊）` : ''}。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。`), 300);
   },
   'back-normal'(el) {
     const l = loanById(el.dataset.id);
@@ -1034,10 +1070,18 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
+// 只有真的有帳（或已建立過雲端帳戶）才上傳 —— 路人打開網頁不佔雲端名額
+function shouldSync() {
+  return state.loans.length > 0 || state.payments.length > 0 || !!cloud.meta().lastSync;
+}
+
 // 雲端同步：每次存檔自動上傳（2 秒去抖動）
-save.onSave = () => cloud.schedulePush(() => state, () => {
-  if (route.view === 'stats') render();
-});
+save.onSave = () => {
+  if (!shouldSync()) return;
+  cloud.schedulePush(() => state, () => {
+    if (route.view === 'stats' || route.view === 'settings') render();
+  });
+};
 
 // 開機：先畫本地（畫不出來就顯示救援訊息，不讓白屏卡死），再比對雲端，新的贏
 // 一次性提示：舊版結清的帳沒有結清日，過去月報會少算
@@ -1056,19 +1100,19 @@ try {
   state = { version: 1, loans: [], payments: [], lastExport: null };
 }
 cloud.pull().then(r => {
-  if (!r || !r.state) { cloud.schedulePush(() => state); return; }
+  if (!r || !r.state) { if (shouldSync()) cloud.schedulePush(() => state); return; }
   const cloudAt = r.state.updatedAt || r.updatedAt || 0;
   if (cloudAt > (state.updatedAt || 0)) {
     state = r.state;
     save(state, false);
     render();
-  } else if ((state.updatedAt || 0) > cloudAt) {
+  } else if ((state.updatedAt || 0) > cloudAt && shouldSync()) {
     cloud.schedulePush(() => state);
   }
-  if (cloud.meta().pending) cloud.schedulePush(() => state);   // 上次沒傳完的補傳
+  if (cloud.meta().pending && shouldSync()) cloud.schedulePush(() => state);   // 上次沒傳完的補傳
 }).catch(() => {});
 
 // 斷線後補傳
 window.addEventListener('online', () => {
-  if (cloud.meta().pending) cloud.schedulePush(() => state);
+  if (cloud.meta().pending && shouldSync()) cloud.schedulePush(() => state);
 });

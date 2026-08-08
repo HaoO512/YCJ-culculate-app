@@ -80,6 +80,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
 .dot.g { background: var(--green); }
 .dot.r { background: var(--red); }
+.dotmore { font-size: 9px; font-weight: 800; color: var(--sub); font-style: normal; line-height: 7px; }
 .day.today { background: var(--accent); color: #fff; }
 .day.sel { outline: 3px solid var(--accent); outline-offset: -3px; }
 .cal-legend {

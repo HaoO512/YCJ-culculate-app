@@ -18,6 +18,7 @@ const state = {
   payments: [
     { id: 'p1', loanId: 'a', date: '2026-08-02', amount: 10000 },  // 甲 8 月已收
     { id: 'p3', loanId: 'a', date: '2026-07-02', amount: 10000 },  // 甲 7 月已收
+    { id: 'p4', loanId: 'a', date: '2026-06-02', amount: 10000 },  // 甲 首期（簽約日）已收
     { id: 'p2', loanId: 'b', date: '2026-06-05', amount: 6000 },   // 乙 6 月有繳
   ],
 };
@@ -26,13 +27,13 @@ const state = {
 const up = upcomingDues(state, now, 3);
 assert.equal(fmtDate(up[0].date), '2026-09-02', '甲跨月 9/2 出現在接下來');
 
-// 跨月漏收：乙 7/5、8/5 兩期未記
+// 跨月漏收：乙 5/5（簽約日＝首期）、7/5、8/5 三期未記
 const miss = missedDues(state, now);
 assert.equal(miss.length, 1);
 assert.equal(miss[0].loan.name, '乙');
-assert.equal(miss[0].count, 2, '乙漏 2 期');
-assert.equal(fmtDate(miss[0].first), '2026-07-05');
-assert.equal(miss[0].amount, 12000);
+assert.equal(miss[0].count, 3, '乙漏 3 期（含簽約日首期）');
+assert.equal(fmtDate(miss[0].first), '2026-05-05');
+assert.equal(miss[0].amount, 18000);
 
 // 8 月月報：丙 8/15 到期 > 結清日 8/10 → 不計；甲乙計入
 const aug = monthReport(state, 2026, 7, now);

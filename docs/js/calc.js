@@ -88,9 +88,10 @@ export function prepaidUntil(loan) {
   return d;
 }
 
-// 該月已處理？（實際收過款，或被預收涵蓋）
+// 該月已處理？（該月收款合計 ≥ 月息才算收齊；或被預收涵蓋）
+// 部分款不會讓「到期未收」憑空消失
 export function settledInMonth(payments, loan, year, month) {
-  if (paidInMonth(payments, loan.id, year, month)) return true;
+  if (monthPaidAmount(payments, loan.id, year, month) >= monthlyInterest(loan)) return true;
   const pu = prepaidUntil(loan);
   if (!pu) return false;
   return dueDateFor(year, month, loan.dueDay) <= pu;
@@ -106,13 +107,18 @@ export function nextCollectDue(loan, from) {
   return d;
 }
 
-// 本月是否已收息（看收款記錄有沒有落在該月）
-export function paidInMonth(payments, loanId, year, month) {
-  return payments.some(p => {
-    if (p.loanId !== loanId) return false;
+// 該月實收總額
+export function monthPaidAmount(payments, loanId, year, month) {
+  return payments.reduce((s, p) => {
+    if (p.loanId !== loanId) return s;
     const d = parseDate(p.date);
-    return d.getFullYear() === year && d.getMonth() === month;
-  });
+    return d.getFullYear() === year && d.getMonth() === month ? s + p.amount : s;
+  }, 0);
+}
+
+// 本月是否有任何收款（部分款也算「有收過錢」，但不代表該期收齊）
+export function paidInMonth(payments, loanId, year, month) {
+  return monthPaidAmount(payments, loanId, year, month) > 0;
 }
 
 export function isActive(loan) {
@@ -184,7 +190,7 @@ export function monthReport(state, y, m, now) {
     if (pu && d <= pu) continue;                       // 預收涵蓋：該月無事
     rows.push({
       loan: l, day: d.getDate(), amount: monthlyInterest(l),
-      paid: paidInMonth(state.payments, l.id, y, m),
+      paid: monthPaidAmount(state.payments, l.id, y, m) >= monthlyInterest(l),
       expired: d <= nowD,                              // 已到期
       problem: isProblem(l),
     });
@@ -230,9 +236,9 @@ export function missedDues(state, now) {
   const out = [];
   for (const l of state.loans) {
     if (l.status !== 'normal') continue;
-    // 首期在借款日之後（簽約日本身不是一期；預收涵蓋期自動跳過）
-    const s = parseDate(l.startDate);
-    let d = nextCollectDue(l, new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1));
+    // 統一規則：第一個真正收息日 = 借款日當天起算（期初先收制；預收涵蓋期自動跳過）
+    // 與首頁月曆、月報、行事曆、雲端提醒同一套
+    let d = nextCollectDue(l, parseDate(l.startDate));
     let guard = 0;
     const misses = [];
     while (d < now && guard++ < 36) {

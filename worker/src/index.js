@@ -86,12 +86,13 @@ function prepaidUntilYMD(loan) {
 function monthlyInterest(loan) { return Math.round(loan.principal * loan.rate / 100); }
 
 function settled(state, loan, y, m) {
-  const paid = (state.payments || []).some(p => {
-    if (p.loanId !== loan.id) return false;
+  // 該月收款合計 ≥ 月息才算收齊（與 App 端 settledInMonth 同規則）
+  const sum = (state.payments || []).reduce((s, p) => {
+    if (p.loanId !== loan.id) return s;
     const [py, pm] = parseYMD(p.date);
-    return py === y && pm === m;
-  });
-  if (paid) return true;
+    return py === y && pm === m ? s + p.amount : s;
+  }, 0);
+  if (sum >= monthlyInterest(loan)) return true;
   const pu = prepaidUntilYMD(loan);
   if (!pu) return false;
   return cmpYMD([y, m, dueDayOf(y, m, loan.dueDay)], pu) <= 0;
@@ -298,7 +299,15 @@ export default {
       if (!snap) return json({ error: 'no snapshot' }, 404);
       const cur = await env.KV.get(`data:${uid}`);
       if (cur) await env.KV.put(`snap:${uid}:restore-${Date.now()}`, cur, { expirationTtl: 31 * 86400 });
-      await env.KV.put(`data:${uid}`, snap);
+      // 時間戳改成現在：復原後的版本必須比所有裝置的本機版本新，否則會被立刻蓋回去
+      let restored;
+      try {
+        restored = JSON.parse(snap);
+        const ts = Date.now();
+        if (restored.state) restored.state.updatedAt = ts;
+        restored.updatedAt = ts;
+      } catch { return json({ error: 'snapshot 損壞' }, 500); }
+      await env.KV.put(`data:${uid}`, JSON.stringify(restored));
       return json({ ok: true });
     }
 
