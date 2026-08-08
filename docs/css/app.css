@@ -189,6 +189,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .bar i { display: block; width: 100%; background: var(--green); border-radius: 7px 7px 3px 3px; opacity: .85; min-height: 2px; }
 .bar.now i { background: var(--accent); opacity: .5; }
 .bar b { font-size: 13px; color: var(--sub); font-weight: 700; }
+.bar .amt { font-size: 10px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* 借款人列表 */
 .person-row {

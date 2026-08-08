@@ -169,6 +169,37 @@ export function stats(state, now) {
   };
 }
 
+// 單月月報：該月應收（排除預收涵蓋與未開始）、實收、未收明細
+export function monthReport(state, y, m) {
+  const rows = [];
+  for (const l of state.loans) {
+    if (!isActive(l)) continue;
+    const d = dueDateFor(y, m, l.dueDay);
+    if (d < parseDate(l.startDate)) continue;
+    const pu = prepaidUntil(l);
+    if (pu && d <= pu) continue;                       // 預收涵蓋：該月無事
+    rows.push({
+      loan: l, day: d.getDate(), amount: monthlyInterest(l),
+      paid: paidInMonth(state.payments, l.id, y, m),
+      problem: isProblem(l),
+    });
+  }
+  const inMonth = p => {
+    const pd = parseDate(p.date);
+    return pd.getFullYear() === y && pd.getMonth() === m;
+  };
+  const payList = state.payments.filter(inMonth)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const received = payList.reduce((s, p) => s + p.amount, 0);
+  const unpaidRows = rows.filter(r => !r.paid).sort((a, b) => a.day - b.day);
+  return {
+    due: rows.reduce((s, r) => s + r.amount, 0),
+    received,
+    unpaid: unpaidRows.reduce((s, r) => s + r.amount, 0),
+    unpaidRows, payList,
+  };
+}
+
 // 近 n 個月每月實收利息（含當月），回傳 [{year, month, total}]
 export function monthlySeries(payments, now, n) {
   const out = [];

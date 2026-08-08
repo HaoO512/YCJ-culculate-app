@@ -4,7 +4,7 @@ import {
   parseDate, fmtDate, today, monthlyInterest, defaultReferral, DEFAULT_APPRAISAL,
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth,
   prepaidUntil, settledInMonth, nextCollectDue,
-  isActive, isProblem, stats, monthlySeries, money,
+  isActive, isProblem, stats, monthlySeries, monthReport, money,
 } from './calc.js';
 import { downloadICS, downloadStopICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
@@ -14,6 +14,7 @@ let state = load();
 let route = { view: 'home' };          // home | people | detail | form | problems | stats
 let calCursor = null;                  // {y, m} 月曆目前顯示的月份
 let calSelected = null;                // 點選的日子（數字）
+let statsCursor = null;                // {y, m} 月報目前顯示的月份
 
 const $view = document.getElementById('view');
 const $tabbar = document.getElementById('tabbar');
@@ -452,13 +453,36 @@ function viewProblems() {
 
 function viewStats() {
   const now = today();
+  if (!statsCursor) statsCursor = { y: now.getFullYear(), m: now.getMonth() };
+  const { y, m } = statsCursor;
+  const isThisMonth = y === now.getFullYear() && m === now.getMonth();
+  const isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth());
+  const rp = monthReport(state, y, m);
   const st = stats(state, now);
+
+  // 未收名單（本月/過去=沒收到；未來=預計要收）
+  const unpaidRows = rp.unpaidRows.map(r => `
+    <button class="slim ${isFuture ? '' : 'alert'}" data-action="open-loan" data-id="${r.loan.id}">
+      <span class="l"><small>${r.day}日</small>${esc(r.loan.name)}</span>
+      <span class="r">${money(r.amount)}</span>
+    </button>`).join('');
+
+  const nameOf = id => { const l = loanById(id); return l ? l.name : '（已刪除）'; };
+  const payRows = rp.payList.map(p => `
+    <div class="h-row">
+      <span>${mdTxt(parseDate(p.date))}</span>
+      <span style="flex:1;font-weight:700">${esc(nameOf(p.loanId))}</span>
+      <span class="amount">${money(p.amount)}</span>
+      <span class="ok-mark">✓</span>
+    </div>`).join('');
+
   const series = monthlySeries(state.payments, now, 7);
   const max = Math.max(...series.map(s => s.total), 1);
   const bars = series.map((s, i) => {
     const isNow = i === series.length - 1;
     const h = Math.round(s.total / max * 100);
-    return `<div class="bar${isNow ? ' now' : ''}"><i style="height:${h}%"></i><b>${s.month + 1}月</b></div>`;
+    const label = s.total ? `<span class="amt">${s.total.toLocaleString('en-US')}</span>` : '';
+    return `<div class="bar${isNow ? ' now' : ''}">${label}<i style="height:${h}%"></i><b>${s.month + 1}月</b></div>`;
   }).join('');
 
   const activeCount = state.loans.filter(isActive).length;
@@ -467,18 +491,38 @@ function viewStats() {
     : '還沒匯出過，建議定期匯出備份';
 
   return `
-    <div class="title-row"><h1 class="title">統計</h1>
-      <span class="date">${now.getFullYear()}年${now.getMonth() + 1}月</span></div>
+    <div class="title-row"><h1 class="title">統計</h1></div>
 
     <div class="card">
-      <p class="card-label">每月收到的利息</p>
+      <div class="cal-month-row">
+        <span class="cal-month" data-action="stats-today">${y}年${m + 1}月${isThisMonth ? '（本月）' : ''}</span>
+        <div class="cal-nav">
+          <button data-action="stats-prev" aria-label="上個月">‹</button>
+          <button data-action="stats-next" aria-label="下個月">›</button>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><p class="k">${m + 1}月應收</p><p class="n">${money(rp.due)}</p></div>
+        <div class="stat"><p class="k">${m + 1}月已收</p><p class="n green">${money(rp.received)}</p></div>
+        <div class="stat wide"><p class="k">${isFuture ? '預計要收' : m + 1 + '月還沒收'}</p>
+          <p class="n ${rp.unpaid && !isFuture ? 'red' : ''}">${money(rp.unpaid)}</p></div>
+      </div>
+    </div>
+
+    ${unpaidRows ? `<p class="section-h">${isFuture ? '這個月要收的' : '還沒收的'}</p><div class="rowlist">${unpaidRows}</div>` : ''}
+    ${payRows ? `<p class="section-h">${m + 1}月收款記錄</p><div class="card history">${payRows}</div>` : ''}
+    ${!unpaidRows && !payRows ? '<div class="empty">這個月沒有收息安排</div>' : ''}
+
+    <div class="card">
+      <p class="card-label">近 7 個月實收利息</p>
       <div class="bars">${bars}</div>
     </div>
 
+    <p class="section-h">總覽（到今天）</p>
     <div class="stat-grid">
       <div class="stat wide"><p class="k">放出本金（${activeCount} 筆）</p><p class="n">${money(st.principalOut)}</p></div>
       <div class="stat"><p class="k">今年已收利息</p><p class="n green">${money(st.yearReceived)}</p></div>
-      <div class="stat"><p class="k">本月已收</p><p class="n green">${money(st.monthReceived)}</p></div>
+      <div class="stat"><p class="k">歷史已收利息</p><p class="n green">${money(st.received)}</p></div>
       <div class="stat"><p class="k">介紹費累計</p><p class="n">${money(st.referralTotal)}</p></div>
       <div class="stat"><p class="k">代書費累計</p><p class="n">${money(st.appraisalTotal)}</p></div>
       <div class="stat wide"><p class="k">淨收入（歷史利息 − 費用）</p><p class="n green">${money(st.net)}</p></div>
@@ -584,6 +628,9 @@ const actions = {
   'cal-prev'() { shiftMonth(-1); },
   'cal-next'() { shiftMonth(1); },
   'cal-today'() { calCursor = null; calSelected = null; render(); },
+  'stats-prev'() { shiftStatsMonth(-1); },
+  'stats-next'() { shiftStatsMonth(1); },
+  'stats-today'() { statsCursor = null; render(); },
 
   receive(el) {
     const l = loanById(el.dataset.id);
@@ -767,6 +814,14 @@ function shiftMonth(delta) {
   const d = new Date(calCursor.y, calCursor.m + delta, 1);
   calCursor = { y: d.getFullYear(), m: d.getMonth() };
   calSelected = null;
+  render();
+}
+
+function shiftStatsMonth(delta) {
+  const now = today();
+  if (!statsCursor) statsCursor = { y: now.getFullYear(), m: now.getMonth() };
+  const d = new Date(statsCursor.y, statsCursor.m + delta, 1);
+  statsCursor = { y: d.getFullYear(), m: d.getMonth() };
   render();
 }
 
