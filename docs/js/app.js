@@ -409,6 +409,7 @@ function saveForm(id) {
     if (prepaidMonths > 0) {
       state.payments.push({ id: newId(), loanId: loan.id, date: startDate, amount: mi * prepaidMonths });
     }
+    navFrom.detail = navFrom.form;   // 新增表單進詳情：返回要回到開表單前的分頁
     save(state); go('detail', { id: loan.id });
     // 行事曆檔自動下載，少按一顆按鈕
     setTimeout(() => {
