@@ -191,6 +191,30 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .bar b { font-size: 13px; color: var(--sub); font-weight: 700; }
 .bar .amt { font-size: 10px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+/* 環圈圖與橫條 */
+.donut-row { display: flex; align-items: center; gap: 16px; }
+.donut-row svg { width: 150px; height: 150px; flex: none; }
+.dlegend { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 0; }
+.dlegend .li { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
+.dlegend .li i { width: 14px; height: 14px; border-radius: 5px; flex: none; }
+.dlegend .li .v { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+.hbars { display: flex; flex-direction: column; gap: 14px; }
+.hbar .top { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; font-weight: 700; margin-bottom: 5px; }
+.hbar .top .v { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+.hbar .track { background: var(--bg); border-radius: 8px; height: 22px; overflow: hidden; }
+.hbar .fill { height: 100%; border-radius: 8px; min-width: 0; }
+
+/* 摺疊區 */
+details.acc { background: var(--card); border: 1px solid var(--line); border-radius: 18px; }
+details.acc summary {
+  list-style: none; display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 18px; font-size: 19px; font-weight: 800; cursor: pointer;
+}
+details.acc summary::-webkit-details-marker { display: none; }
+details.acc summary::after { content: '▾'; color: var(--sub); font-size: 18px; }
+details.acc[open] summary::after { content: '▴'; }
+details.acc .acc-body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+
 /* 借款人列表 */
 .person-row {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;

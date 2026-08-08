@@ -524,6 +524,58 @@ function viewStats() {
     ? `上次匯出：${state.lastExport}`
     : '還沒匯出過，建議定期匯出備份';
 
+  // ── 錢在哪裡：環圈圖（正常收息中 vs 欠繳中的本金）──
+  const normalP = state.loans.filter(l => l.status === 'normal').reduce((s, l) => s + l.principal, 0);
+  const problemP = st.overduePrincipal;
+  const totalP = normalP + problemP;
+  let donutCard = '';
+  if (totalP > 0) {
+    const C = 2 * Math.PI * 50;
+    const gap = totalP && normalP && problemP ? 4 : 0;   // 兩段之間留縫
+    const segG = Math.max(0, normalP / totalP * C - gap);
+    const segR = Math.max(0, problemP / totalP * C - gap);
+    donutCard = `
+    <div class="card">
+      <p class="card-label">錢在哪裡（放出本金 ${activeCount} 筆）</p>
+      <div class="donut-row">
+        <svg viewBox="0 0 140 140" role="img" aria-label="本金組成">
+          <g transform="rotate(-90 70 70)">
+            ${normalP ? `<circle cx="70" cy="70" r="50" fill="none" stroke="var(--green)" stroke-width="28" stroke-dasharray="${segG} ${C - segG}" stroke-dashoffset="0"/>` : ''}
+            ${problemP ? `<circle cx="70" cy="70" r="50" fill="none" stroke="var(--red)" stroke-width="28" stroke-dasharray="${segR} ${C - segR}" stroke-dashoffset="${-(segG + gap)}"/>` : ''}
+          </g>
+          <text x="70" y="64" text-anchor="middle" font-size="11" fill="var(--sub)" font-weight="700">總本金</text>
+          <text x="70" y="84" text-anchor="middle" font-size="15" fill="var(--ink)" font-weight="800">${money(totalP)}</text>
+        </svg>
+        <div class="dlegend">
+          <div class="li"><i style="background:var(--green)"></i>正常收息中
+            <span class="v">${money(normalP)}</span></div>
+          <div class="li"><i style="background:var(--red)"></i>欠繳中
+            <span class="v">${money(problemP)}</span></div>
+          ${st.overdueInt ? `<div class="li" style="color:var(--red)"><i style="background:none"></i>另有欠息
+            <span class="v">${money(st.overdueInt)}</span></div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── 賺了多少：橫向長條（已收利息 / 付出費用 / 淨收入）──
+  const fees = st.referralTotal + st.appraisalTotal;
+  const hMax = Math.max(st.received, fees, st.net, 1);
+  const hbar = (label, v, color) => `
+    <div class="hbar">
+      <div class="top"><span>${label}</span><span class="v">${money(v)}</span></div>
+      <div class="track"><div class="fill" style="width:${Math.max(v / hMax * 100, v > 0 ? 2 : 0)}%;background:${color}"></div></div>
+    </div>`;
+  const incomeCard = `
+    <div class="card">
+      <p class="card-label">賺了多少（到今天）</p>
+      <div class="hbars">
+        ${hbar('已收利息', st.received, 'var(--green)')}
+        ${hbar('付出費用（介紹＋代書）', fees, '#A08C74')}
+        ${hbar('淨收入', st.net, 'var(--accent)')}
+      </div>
+    </div>`;
+
   return `
     <div class="title-row"><h1 class="title">統計</h1></div>
 
@@ -552,37 +604,44 @@ function viewStats() {
       <div class="bars">${bars}</div>
     </div>
 
-    <p class="section-h">總覽（到今天）</p>
-    <div class="stat-grid">
-      <div class="stat wide"><p class="k">放出本金（${activeCount} 筆）</p><p class="n">${money(st.principalOut)}</p></div>
-      <div class="stat"><p class="k">今年已收利息</p><p class="n green">${money(st.yearReceived)}</p></div>
-      <div class="stat"><p class="k">歷史已收利息</p><p class="n green">${money(st.received)}</p></div>
-      <div class="stat"><p class="k">介紹費累計</p><p class="n">${money(st.referralTotal)}</p></div>
-      <div class="stat"><p class="k">代書費累計</p><p class="n">${money(st.appraisalTotal)}</p></div>
-      <div class="stat wide"><p class="k">淨收入（歷史利息 − 費用）</p><p class="n green">${money(st.net)}</p></div>
-      <div class="stat"><p class="k">欠繳總額</p><p class="n red">${money(st.overdueTotal)}</p></div>
-      <div class="stat"><p class="k">壞帳沖銷</p><p class="n">${money(st.writeoffTotal)}</p></div>
-    </div>
+    ${donutCard}
+    ${incomeCard}
 
-    <div class="card">
-      <p class="card-label">雲端同步</p>
-      <div class="kv">
-        <div><span class="k">狀態</span><span class="v">${syncStatusTxt()}</span></div>
-        <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
+    <details class="acc">
+      <summary>更多明細</summary>
+      <div class="acc-body">
+        <div class="stat-grid">
+          <div class="stat"><p class="k">今年已收利息</p><p class="n green">${money(st.yearReceived)}</p></div>
+          <div class="stat"><p class="k">歷史已收利息</p><p class="n green">${money(st.received)}</p></div>
+          <div class="stat"><p class="k">介紹費累計</p><p class="n">${money(st.referralTotal)}</p></div>
+          <div class="stat"><p class="k">代書費累計</p><p class="n">${money(st.appraisalTotal)}</p></div>
+          <div class="stat"><p class="k">欠繳總額（本金＋欠息）</p><p class="n red">${money(st.overdueTotal)}</p></div>
+          <div class="stat"><p class="k">壞帳沖銷</p><p class="n">${money(st.writeoffTotal)}</p></div>
+        </div>
       </div>
-    </div>
-    <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
-    ${cloud.meta().pushOn
-      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button><p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">已開自動提醒 —— 行事曆提醒可以不用再加，兩邊都加會重複通知。</p>'
-      : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
-    <div class="btn-pair">
-      <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
-      <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
-    </div>
-    <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
-    <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
-    <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
-    <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
+    </details>
+
+    <details class="acc">
+      <summary>雲端同步與備份</summary>
+      <div class="acc-body">
+        <div class="kv">
+          <div><span class="k">狀態</span><span class="v">${syncStatusTxt()}</span></div>
+          <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
+        </div>
+        <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
+        ${cloud.meta().pushOn
+          ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button><p class="hint" style="color:var(--sub);font-size:15px;margin:0">已開自動提醒 —— 行事曆提醒可以不用再加，兩邊都加會重複通知。</p>'
+          : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
+        <div class="btn-pair">
+          <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
+          <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
+        </div>
+        <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
+        <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
+        <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
+        <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
+      </div>
+    </details>
   `;
 }
 
