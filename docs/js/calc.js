@@ -209,11 +209,12 @@ export function monthReport(state, y, m, now) {
   };
 }
 
-// 跨月：從今天起真正最近的 count 筆收息（跳過已入帳月份）
-export function upcomingDues(state, now, count = 3) {
+// 跨月：從今天起真正最近的 count 筆收息（跳過已入帳月份；漏收中的人不重複列）
+export function upcomingDues(state, now, count = 3, excludeIds = null) {
   const out = [];
   for (const l of state.loans) {
     if (l.status !== 'normal') continue;
+    if (excludeIds && excludeIds.has(l.id)) continue;
     let d = nextCollectDue(l, now);
     let guard = 0;
     while (guard++ < 24 && settledInMonth(state.payments, l, d.getFullYear(), d.getMonth())) {

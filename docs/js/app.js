@@ -132,7 +132,7 @@ function viewHome() {
       </button>`;
   }
   const missed = missedDues(state, now);
-  const coming = upcomingDues(state, now, 3);
+  const coming = upcomingDues(state, now, 3, new Set(missed.map(x => x.loan.id)));
   const relTxt = d => {
     const diff = Math.round((d - now) / 86400000);
     return diff === 0 ? '今天' : diff === 1 ? '明天' : `${d.getMonth() + 1}/${d.getDate()}`;
@@ -196,12 +196,19 @@ function viewPeople() {
   const closed = state.loans.filter(l => l.status === 'closed')
     .sort((a, b) => (b.closedDate || '').localeCompare(a.closedDate || ''));
 
-  const rowOf = l => `
+  const rowOf = l => {
+    const right = l.status === 'closed'
+      ? (l.closedDate
+          ? `結清 ${(d => d.getMonth() + 1 + '/' + d.getDate())(parseDate(l.closedDate))}`
+          : '結清日未填')
+      : money(monthlyInterest(l));
+    return `
     <button class="person-row" data-action="open-loan" data-id="${l.id}">
       <span class="name">${esc(l.name)}</span>
       <span class="chip ${STATUS_CHIP[l.status]}">${STATUS_TXT[l.status]}</span>
-      <span class="money">${money(monthlyInterest(l))}</span>
+      <span class="money" ${l.status === 'closed' ? 'style="font-size:17px;color:var(--sub)"' : ''}>${right}</span>
     </button>`;
+  };
 
   return `
     <div class="title-row"><h1 class="title">借款（進行中 ${running.length}）</h1>
@@ -232,7 +239,7 @@ function viewDetail() {
   const pu = prepaidUntil(l);
 
   const pays = state.payments.filter(p => p.loanId === l.id)
-    .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 24);
+    .sort((a, b) => b.date.localeCompare(a.date));
   const payRows = pays.map(p => `
     <div class="h-row">
       <span>${mdTxt(parseDate(p.date))}</span>
@@ -275,12 +282,14 @@ function viewDetail() {
     primary = `
       <div class="card">
         <div class="kv">
-          <div><span class="k">狀態</span><span class="v">已結清${l.closedDate ? '（' + l.closedDate + '）' : ''}</span></div>
+          <div><span class="k">狀態</span><span class="v">已結清</span></div>
+          <div><span class="k">結清日</span><span class="v ${l.closedDate ? '' : 'red'}">${l.closedDate || '未填（過去月報會少算這筆）'}</span></div>
           ${l.finalReceived != null ? `<div><span class="k">結案實收</span><span class="v">${money(l.finalReceived)}</span></div>` : ''}
           ${l.writeoff ? `<div><span class="k">壞帳沖銷</span><span class="v red">${money(l.writeoff)}</span></div>` : ''}
         </div>
       </div>`;
     more = `
+        ${l.closedDate ? '' : `<button class="btn accent" data-action="fill-closed" data-id="${l.id}">補填結清日</button>`}
         <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
   }
@@ -656,7 +665,7 @@ function viewSettings() {
     <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
     <p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">${cloud.meta().pushOn
       ? '已開自動提醒 —— 行事曆可以不用再加，兩邊都加會重複通知。'
-      : '每筆收息日前一天 09:30 由行事曆提醒；開了上面的自動提醒就不需要。'}</p>
+      : '行事曆會在收息日前一天與當天 09:30 各提醒一次；開了上面的自動提醒就不需要。'}</p>
 
     <p class="section-h">備份</p>
     <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
@@ -884,6 +893,18 @@ const actions = {
     setTimeout(() => alert('已刪除。\n「停止提醒」檔已下載：點開按「加入」，行事曆的提醒才會跟著停。'), 300);
   },
 
+  'fill-closed'(el) {
+    const l = loanById(el.dataset.id);
+    const d = prompt('這筆是哪天結清的？（格式 2026-08-10）\n填了之後，結清前的月份才會正確出現在月報裡。', fmtDate(today()));
+    if (!d) return;
+    const t = d.trim();
+    const dd = /^\d{4}-\d{2}-\d{2}$/.test(t) ? parseDate(t) : null;
+    if (!dd || fmtDate(dd) !== t) { alert('這不是真實日期，格式要像 2026-08-10'); return; }
+    if (dd < parseDate(l.startDate)) { alert('結清日不能早於借款日'); return; }
+    if (dd > today()) { alert('結清日不能是未來'); return; }
+    l.closedDate = t;
+    commit();
+  },
   'ics-one'(el) {
     const l = loanById(el.dataset.id);
     downloadICS([l], `收息提醒-${l.name}.ics`);
@@ -1014,6 +1035,15 @@ save.onSave = () => cloud.schedulePush(() => state, () => {
 });
 
 // 開機：先畫本地（畫不出來就顯示救援訊息，不讓白屏卡死），再比對雲端，新的贏
+// 一次性提示：舊版結清的帳沒有結清日，過去月報會少算
+const noClosedDate = state.loans.filter(l => l.status === 'closed' && !l.closedDate);
+if (noClosedDate.length && !localStorage.getItem('loanapp.closedNotice')) {
+  localStorage.setItem('loanapp.closedNotice', '1');
+  setTimeout(() => alert(
+    `有 ${noClosedDate.length} 筆已結清的帳沒填結清日（${noClosedDate.map(l => l.name).join('、')}）。\n` +
+    '到「借款 → 已結清」點進去 → 更多操作 → 補填結清日，過去月報才算得準。'), 800);
+}
+
 try {
   render();
 } catch (e) {
