@@ -169,18 +169,23 @@ export function stats(state, now) {
   };
 }
 
-// 單月月報：該月應收（排除預收涵蓋與未開始）、實收、未收明細
-export function monthReport(state, y, m) {
+// 單月月報。語意：到期（該月該收的）／入帳（該月實際收到的錢，含預收補繳）
+// 已結清的帳在結清日之前的月份仍計入，歷史不被改寫
+export function monthReport(state, y, m, now) {
+  const nowD = now || today();
   const rows = [];
   for (const l of state.loans) {
-    if (!isActive(l)) continue;
     const d = dueDateFor(y, m, l.dueDay);
+    if (l.status === 'closed') {
+      if (!l.closedDate || d > parseDate(l.closedDate)) continue;
+    }
     if (d < parseDate(l.startDate)) continue;
     const pu = prepaidUntil(l);
     if (pu && d <= pu) continue;                       // 預收涵蓋：該月無事
     rows.push({
       loan: l, day: d.getDate(), amount: monthlyInterest(l),
       paid: paidInMonth(state.payments, l.id, y, m),
+      expired: d <= nowD,                              // 已到期
       problem: isProblem(l),
     });
   }
@@ -191,13 +196,53 @@ export function monthReport(state, y, m) {
   const payList = state.payments.filter(inMonth)
     .sort((a, b) => a.date.localeCompare(b.date));
   const received = payList.reduce((s, p) => s + p.amount, 0);
-  const unpaidRows = rows.filter(r => !r.paid).sort((a, b) => a.day - b.day);
+  const unpaidAll = rows.filter(r => !r.paid).sort((a, b) => a.day - b.day);
+  const unpaidRows = unpaidAll.filter(r => r.expired);   // 已到期未收（要處理的）
+  const notYetRows = unpaidAll.filter(r => !r.expired);  // 尚未到期（正常）
   return {
     due: rows.reduce((s, r) => s + r.amount, 0),
     received,
-    unpaid: unpaidRows.reduce((s, r) => s + r.amount, 0),
-    unpaidRows, payList,
+    unpaid: unpaidAll.reduce((s, r) => s + r.amount, 0),
+    dueUnpaid: unpaidRows.reduce((s, r) => s + r.amount, 0),
+    notYet: notYetRows.reduce((s, r) => s + r.amount, 0),
+    unpaidRows, notYetRows, payList,
   };
+}
+
+// 跨月：從今天起真正最近的 count 筆收息（跳過已入帳月份）
+export function upcomingDues(state, now, count = 3) {
+  const out = [];
+  for (const l of state.loans) {
+    if (l.status !== 'normal') continue;
+    let d = nextCollectDue(l, now);
+    let guard = 0;
+    while (guard++ < 24 && settledInMonth(state.payments, l, d.getFullYear(), d.getMonth())) {
+      d = dueDateFor(d.getFullYear(), d.getMonth() + 1, l.dueDay);
+    }
+    out.push({ loan: l, date: d });
+  }
+  return out.sort((a, b) => a.date - b.date).slice(0, count);
+}
+
+// 跨月：所有「過了收息日還沒記收款」的帳（直到記收款或標欠繳才消失）
+export function missedDues(state, now) {
+  const out = [];
+  for (const l of state.loans) {
+    if (l.status !== 'normal') continue;
+    // 首期在借款日之後（簽約日本身不是一期；預收涵蓋期自動跳過）
+    const s = parseDate(l.startDate);
+    let d = nextCollectDue(l, new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1));
+    let guard = 0;
+    const misses = [];
+    while (d < now && guard++ < 36) {
+      if (!settledInMonth(state.payments, l, d.getFullYear(), d.getMonth())) misses.push(new Date(d));
+      d = dueDateFor(d.getFullYear(), d.getMonth() + 1, l.dueDay);
+    }
+    if (misses.length) {
+      out.push({ loan: l, first: misses[0], count: misses.length, amount: misses.length * monthlyInterest(l) });
+    }
+  }
+  return out.sort((a, b) => a.first - b.first);
 }
 
 // 近 n 個月每月實收利息（含當月），回傳 [{year, month, total}]

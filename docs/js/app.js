@@ -5,6 +5,7 @@ import {
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth,
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
+  upcomingDues, missedDues,
 } from './calc.js';
 import { downloadICS, downloadStopICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
@@ -119,23 +120,45 @@ function viewHome() {
       </button>`;
   };
 
-  // 待辦（只在看本月時出現）
+  // 待辦：欠繳摘要 → 跨月漏收（直到記收款或標欠繳才消失）→ 跨月最近 3 筆
+  const probs = state.loans.filter(isProblem);
   let todoHtml = '';
-  if (isThisMonth) {
-    const missed = dues.filter(x => !x.paid && !x.problem && x.day < now.getDate());
-    const coming = dues.filter(x => !x.paid && !x.problem && x.day >= now.getDate()).slice(0, 3);
-    if (missed.length) {
-      todoHtml += `<p class="section-h" style="color:var(--red)">漏收的</p>
-        <div class="rowlist">${missed.map(rowOf).join('')}</div>`;
-    }
-    if (coming.length) {
-      todoHtml += `<p class="section-h">接下來</p>
-        <div class="rowlist">${coming.map(rowOf).join('')}</div>`;
-    }
-    if (!missed.length && !coming.length) {
-      const hasProblems = state.loans.some(isProblem);
-      todoHtml = `<div class="empty" style="padding:20px 10px">${hasProblems ? '今天沒有新的收息（欠繳的在「欠繳」分頁）' : '今天沒有新的收息 ✓'}</div>`;
-    }
+  if (probs.length) {
+    const maxDays = Math.max(...probs.map(l => Math.floor((now - parseDate(l.overdueSince || l.startDate)) / 86400000)));
+    todoHtml += `
+      <button class="slim alert" data-action="go" data-view="problems">
+        <span class="l">欠繳 ${probs.length} 筆，最久 ${maxDays} 天</span>
+        <span class="r" style="font-size:18px">去處理 ›</span>
+      </button>`;
+  }
+  const missed = missedDues(state, now);
+  const coming = upcomingDues(state, now, 3);
+  const relTxt = d => {
+    const diff = Math.round((d - now) / 86400000);
+    return diff === 0 ? '今天' : diff === 1 ? '明天' : `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+  if (missed.length) {
+    todoHtml += `<p class="section-h" style="color:var(--red)">漏收的</p>
+      <div class="rowlist">${missed.map(x => `
+        <button class="slim alert" data-action="open-loan" data-id="${x.loan.id}">
+          <span class="l"><small>${x.first.getMonth() + 1}/${x.first.getDate()} 起${x.count > 1 ? '·' + x.count + '期' : ''}</small>${esc(x.loan.name)}</span>
+          <span class="r">${money(x.amount)}</span>
+        </button>`).join('')}</div>`;
+  }
+  if (coming.length) {
+    todoHtml += `<p class="section-h">接下來</p>
+      <div class="rowlist">${coming.map(x => {
+        const rel = relTxt(x.date);
+        const hot = rel === '今天' || rel === '明天';
+        return `
+        <button class="slim${hot ? ' notice' : ''}" data-action="open-loan" data-id="${x.loan.id}">
+          <span class="l"><small>${rel}</small>${esc(x.loan.name)}</span>
+          <span class="r">${money(monthlyInterest(x.loan))}</span>
+        </button>`;
+      }).join('')}</div>`;
+  }
+  if (!probs.length && !missed.length && !coming.length) {
+    todoHtml = '<div class="empty" style="padding:20px 10px">今天沒有新的收息 ✓</div>';
   }
 
   // 點了日子 → 當天名單（放月曆下面）
@@ -167,23 +190,29 @@ function viewHome() {
 // ───────────────────────── 借款人列表 ─────────────────────────
 
 function viewPeople() {
-  const order = { overdue: 0, legal: 0, normal: 1, closed: 2 };
-  const loans = [...state.loans].sort((a, b) =>
+  const order = { overdue: 0, legal: 0, normal: 1 };
+  const running = state.loans.filter(isActive).sort((a, b) =>
     (order[a.status] - order[b.status]) || a.name.localeCompare(b.name, 'zh-Hant'));
+  const closed = state.loans.filter(l => l.status === 'closed')
+    .sort((a, b) => (b.closedDate || '').localeCompare(a.closedDate || ''));
 
-  const rows = loans.map(l => `
+  const rowOf = l => `
     <button class="person-row" data-action="open-loan" data-id="${l.id}">
       <span class="name">${esc(l.name)}</span>
       <span class="chip ${STATUS_CHIP[l.status]}">${STATUS_TXT[l.status]}</span>
       <span class="money">${money(monthlyInterest(l))}</span>
-    </button>`).join('');
+    </button>`;
 
   return `
-    <div class="title-row"><h1 class="title">借款（${loans.length}）</h1>
+    <div class="title-row"><h1 class="title">借款（進行中 ${running.length}）</h1>
       <span style="display:flex;gap:8px;align-items:center">
         <button class="addbtn" data-action="go" data-view="form">＋ 新增</button>${gearBtn()}
       </span></div>
-    <div class="rowlist">${rows || '<div class="empty">還沒有借款記錄，按上面「＋ 新增」</div>'}</div>`;
+    <div class="rowlist">${running.map(rowOf).join('') || '<div class="empty">還沒有借款記錄，按上面「＋ 新增」</div>'}</div>
+    ${closed.length ? `
+      <details class="acc"><summary>已結清（${closed.length}）</summary><div class="acc-body">
+        <div class="rowlist">${closed.map(rowOf).join('')}</div>
+      </div></details>` : ''}`;
 }
 
 // ───────────────────────── 借款人詳情 ─────────────────────────
@@ -212,50 +241,57 @@ function viewDetail() {
       <button class="del" data-action="del-payment" data-id="${p.id}" aria-label="刪除">✕</button>
     </div>`).join('');
 
-  let statusBlock = '';
+  // 主要動作與「更多」分開：日常只看一顆按鈕
+  let primary = '';
+  let more = '';
   if (l.status === 'normal') {
-    statusBlock = `
+    primary = `
       <button class="btn green" data-action="receive" data-id="${l.id}" ${paid ? 'disabled' : ''}>
         ${byPrepaid ? '✓ 本月在預收範圍內' : paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
-      </button>
-      <details class="acc"><summary>更多</summary><div class="acc-body">
+      </button>`;
+    more = `
         <button class="btn outline-grey" data-action="ics-one" data-id="${l.id}">加到行事曆（每月提醒）</button>
         <button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>
         <button class="btn outline-grey" data-action="close-normal" data-id="${l.id}">結清還本</button>
-        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
-      </div></details>`;
+        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
   } else if (l.status === 'overdue' || l.status === 'legal') {
     const periods = overduePeriods(l, now);
     const accrued = overdueInterest(l, now, state.payments);
-    statusBlock = `
+    primary = `
       <div class="card debt-sum">
         <p class="card-label" style="color:var(--red)">欠繳中${l.status === 'legal' ? '（法院處理）' : ''}</p>
         <p class="num">${money(l.principal + accrued)}</p>
         <p class="sub">本金 ${money(l.principal)} ＋ 欠 ${periods} 期利息 ${money(accrued)}（${mdTxt(parseDate(l.overdueSince))} 起算）</p>
       </div>
-      <button class="btn green" data-action="repay-overdue" data-id="${l.id}">收到補繳，記一筆</button>
-      <details class="acc"><summary>更多</summary><div class="acc-body">
+      <button class="btn green" data-action="repay-overdue" data-id="${l.id}">收到補繳，記一筆</button>`;
+    more = `
         ${l.status === 'overdue'
           ? `<button class="btn outline-red" data-action="to-legal" data-id="${l.id}">進法院</button>`
           : `<button class="btn outline-red" data-action="settle-legal" data-id="${l.id}">結案（填實拿多少）</button>`}
         <button class="btn outline-grey" data-action="back-normal" data-id="${l.id}">恢復正常</button>
         <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
-        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
-      </div></details>`;
+        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
   } else {
-    statusBlock = `
+    primary = `
       <div class="card">
         <div class="kv">
-          <div><span class="k">狀態</span><span class="v">已結清</span></div>
+          <div><span class="k">狀態</span><span class="v">已結清${l.closedDate ? '（' + l.closedDate + '）' : ''}</span></div>
           ${l.finalReceived != null ? `<div><span class="k">結案實收</span><span class="v">${money(l.finalReceived)}</span></div>` : ''}
           ${l.writeoff ? `<div><span class="k">壞帳沖銷</span><span class="v red">${money(l.writeoff)}</span></div>` : ''}
         </div>
-      </div>
-      <details class="acc"><summary>更多</summary><div class="acc-body">
+      </div>`;
+    more = `
         <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
-        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
-      </div></details>`;
+        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
   }
+
+  // 最近 3 筆收款：每天最常確認的是「上次何時收到」
+  const recent3 = pays.slice(0, 3).map(p => `
+    <div class="h-row">
+      <span>${mdTxt(parseDate(p.date))}</span>
+      <span class="amount">${money(p.amount)}</span>
+      <span class="ok-mark">✓</span>
+    </div>`).join('');
 
   return `
     <div class="backrow">
@@ -270,9 +306,11 @@ function viewDetail() {
       ${l.status === 'normal' ? `<p class="when">每月${dueDayTxt(l.dueDay)}收，下次：${nextTxt}</p>` : ''}
     </div>
 
-    ${statusBlock}
+    ${primary}
 
-    <div class="card">
+    ${recent3 ? `<p class="section-h">最近收款</p><div class="card history">${recent3}</div>` : ''}
+
+    <details class="acc"><summary>借款資料</summary><div class="acc-body">
       <div class="kv">
         <div><span class="k">本金</span><span class="v">${money(l.principal)}</span></div>
         <div><span class="k">月利率</span><span class="v">${l.rate}%</span></div>
@@ -282,10 +320,13 @@ function viewDetail() {
         <div><span class="k">代書費</span><span class="v">${money(l.appraisalFee || 0)}</span></div>
         ${l.note ? `<div><span class="k">備註</span><span class="v" style="font-weight:600">${esc(l.note)}</span></div>` : ''}
       </div>
-    </div>
+    </div></details>
 
-    <p class="section-h">收款記錄</p>
-    <div class="card history">${payRows || '<div class="empty" style="padding:14px">還沒收過款</div>'}</div>
+    <details class="acc"><summary>完整收款記錄（${state.payments.filter(p => p.loanId === l.id).length} 筆）</summary><div class="acc-body">
+      <div class="history">${payRows || '<div class="empty" style="padding:14px">還沒收過款</div>'}</div>
+    </div></details>
+
+    <details class="acc"><summary>更多操作</summary><div class="acc-body">${more}</div></details>
   `;
 }
 
@@ -428,24 +469,29 @@ function viewProblems() {
   if (!probs.length) return head + '<div class="empty">目前沒有欠繳，很好 👍</div>';
 
   const st = stats(state, now);
-  const rows = probs.map(l => {
+  const rowOf = l => {
     const periods = overduePeriods(l, now);
     const net = overdueInterest(l, now, state.payments);
     const since = parseDate(l.overdueSince);
     return `
       <button class="person-row" data-action="open-loan" data-id="${l.id}">
         <span class="pcol">
-          <span class="name">${esc(l.name)}${l.status === 'legal' ? ' <span class="chip bad" style="font-size:13px;padding:2px 9px">法院</span>' : ''}</span>
+          <span class="name">${esc(l.name)}</span>
           <span class="psub">欠 ${periods} 期 · 自 ${since.getMonth() + 1}/${since.getDate()} 起</span>
         </span>
         <span class="money" style="color:var(--red)">欠 ${money(net)}</span>
         <span class="chev">›</span>
       </button>`;
-  }).join('');
+  };
+  // 追款優先順序：最早停繳的排最上面
+  const bySince = (a, b) => a.overdueSince.localeCompare(b.overdueSince);
+  const chasing = probs.filter(l => l.status === 'overdue').sort(bySince);
+  const legal = probs.filter(l => l.status === 'legal').sort(bySince);
 
   return head + `
     <p class="section-h">合計欠息 ${money(st.overdueInt)}｜卡住本金 ${money(st.overduePrincipal)}</p>
-    <div class="rowlist">${rows}</div>`;
+    ${chasing.length ? `<p class="section-h">待追繳</p><div class="rowlist">${chasing.map(rowOf).join('')}</div>` : ''}
+    ${legal.length ? `<p class="section-h">法院處理中</p><div class="rowlist">${legal.map(rowOf).join('')}</div>` : ''}`;
 }
 
 // ───────────────────────── 統計 ─────────────────────────
@@ -471,13 +517,15 @@ function statsMonthView(now) {
   const { y, m } = statsCursor;
   const isThisMonth = y === now.getFullYear() && m === now.getMonth();
   const isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth());
-  const rp = monthReport(state, y, m);
+  const rp = monthReport(state, y, m, now);
 
-  const unpaidRows = rp.unpaidRows.map(r => `
-    <button class="slim ${isFuture ? '' : 'alert'}" data-action="open-loan" data-id="${r.loan.id}">
+  const rowFor = (r, alert) => `
+    <button class="slim${alert ? ' alert' : ''}" data-action="open-loan" data-id="${r.loan.id}">
       <span class="l"><small>${r.day}日</small>${esc(r.loan.name)}</span>
       <span class="r">${money(r.amount)}</span>
-    </button>`).join('');
+    </button>`;
+  const expiredRows = rp.unpaidRows.map(r => rowFor(r, true)).join('');
+  const notYetRows = rp.notYetRows.map(r => rowFor(r, false)).join('');
 
   const nameOf = id => { const l = loanById(id); return l ? l.name : '（已刪除）'; };
   const payRows = rp.payList.map(p => `
@@ -498,15 +546,16 @@ function statsMonthView(now) {
         </div>
       </div>
       <div class="triple">
-        <div><p class="k">應收</p><p class="n">${money(rp.due)}</p></div>
-        <div><p class="k">已收</p><p class="n green">${money(rp.received)}</p></div>
-        <div><p class="k">${isFuture ? '預計要收' : '還沒收'}</p>
-          <p class="n ${rp.unpaid && !isFuture ? 'red' : ''}">${money(rp.unpaid)}</p></div>
+        <div><p class="k">本月到期</p><p class="n">${money(rp.due)}</p></div>
+        <div><p class="k">本月入帳</p><p class="n green">${money(rp.received)}</p></div>
+        <div><p class="k">到期未收</p>
+          <p class="n ${rp.dueUnpaid ? 'red' : ''}">${money(rp.dueUnpaid)}</p></div>
       </div>
     </div>
-    ${unpaidRows ? `<p class="section-h">${isFuture ? '這個月要收的' : '還沒收的'}</p><div class="rowlist">${unpaidRows}</div>` : ''}
+    ${expiredRows ? `<p class="section-h" style="color:var(--red)">到期還沒收的</p><div class="rowlist">${expiredRows}</div>` : ''}
+    ${notYetRows ? `<p class="section-h">尚未到期</p><div class="rowlist">${notYetRows}</div>` : ''}
     ${payRows ? `<p class="section-h">${m + 1}月收款記錄</p><div class="card history">${payRows}</div>` : ''}
-    ${!unpaidRows && !payRows ? '<div class="empty">這個月沒有收息安排</div>' : ''}`;
+    ${!expiredRows && !notYetRows && !payRows ? '<div class="empty">這個月沒有收息安排</div>' : ''}`;
 }
 
 function statsOverview(now) {
@@ -590,25 +639,37 @@ function viewSettings() {
       <button class="back" data-action="back">‹</button>
       <h1>設定</h1>
     </div>
+
+    <p class="section-h">同步與通知</p>
     <div class="card">
-      <p class="card-label">雲端同步</p>
       <div class="kv">
-        <div><span class="k">狀態</span><span class="v">${syncStatusTxt()}</span></div>
+        <div><span class="k">同步狀態</span><span class="v">${syncStatusTxt()}</span></div>
         <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
       </div>
     </div>
     <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
     ${cloud.meta().pushOn
-      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button><p class="hint" style="color:var(--sub);font-size:15px;margin:0">已開自動提醒 —— 行事曆提醒可以不用再加，兩邊都加會重複通知。</p>'
+      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button>'
       : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
-    <div class="btn-pair">
-      <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
-      <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
-    </div>
+
+    <p class="section-h">行事曆</p>
     <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
+    <p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">${cloud.meta().pushOn
+      ? '已開自動提醒 —— 行事曆可以不用再加，兩邊都加會重複通知。'
+      : '每筆收息日前一天 09:30 由行事曆提醒；開了上面的自動提醒就不需要。'}</p>
+
+    <p class="section-h">備份</p>
     <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
     <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
     <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
+
+    <details class="acc"><summary>進階（同步金鑰）</summary><div class="acc-body">
+      <p class="hint" style="color:var(--sub);font-size:15px;margin:0">金鑰＝資料的鑰匙。抄下收好；換手機或第二台裝置輸入它連回同一份帳。</p>
+      <div class="btn-pair">
+        <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
+        <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
+      </div>
+    </div></details>
   `;
 }
 
@@ -774,6 +835,14 @@ const actions = {
     }
     state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(today()), amount });
     commit();
+    // 補齊了就別留在「欠繳但欠 $0」的矛盾狀態
+    if (overdueInterest(l, today(), state.payments) <= 0 &&
+        confirm(`${l.name} 的欠息已補齊。恢復正常收息？`)) {
+      l.status = 'normal'; l.overdueSince = null;
+      commit();
+      downloadICS([l], `收息提醒-${l.name}.ics`);
+      setTimeout(() => alert('已恢復正常。\n行事曆檔已下載：點開按「加入」，每月提醒就接回來了。'), 300);
+    }
   },
   'settle-legal'(el) {
     const l = loanById(el.dataset.id);
@@ -786,6 +855,7 @@ const actions = {
     l.finalReceived = got;
     l.writeoff = Math.max(0, owed - got);
     l.status = 'closed';
+    l.closedDate = fmtDate(now);
     commit();
     downloadStopICS(l);
     setTimeout(() => alert(`結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}\n「停止提醒」檔已自動下載：點開按「加入」。`), 300);
@@ -794,12 +864,17 @@ const actions = {
     const l = loanById(el.dataset.id);
     if (!confirm(`${l.name} 還清本金 ${money(l.principal)}，結清這筆借款？`)) return;
     l.status = 'closed';
+    l.closedDate = fmtDate(today());
     commit();
     downloadStopICS(l);
     setTimeout(() => alert('已結清。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。'), 300);
   },
   'delete-loan'(el) {
     const l = loanById(el.dataset.id);
+    if (state.payments.some(p => p.loanId === l.id)) {
+      alert('這筆帳有收款記錄，不能刪除（會改寫過去月報）。\n請改用「結清還本」。');
+      return;
+    }
     if (!confirm(`確定刪除 ${l.name} 這筆借款？收款記錄也會一起刪。`)) return;
     if (!confirm('再確認一次：刪了就救不回來（除非有 Excel 備份）。')) return;
     downloadStopICS(l);

@@ -20,6 +20,7 @@ export function exportXlsx(state) {
     '每月利息': monthlyInterest(l),
     '狀態': STATUS_TXT[l.status] || l.status,
     '停繳日': l.overdueSince || '',
+    '結清日': l.closedDate || '',
     '介紹費': l.referralFee || 0,
     '代書費': l.appraisalFee || 0,
     '結案實收': l.finalReceived ?? '',
@@ -91,6 +92,8 @@ export function parseXlsx(arrayBuffer) {
     const overdueSince = r['停繳日'] ? normDate(r['停繳日']) : null;
     if ((status === 'overdue' || status === 'legal') && !overdueSince)
       errors.push(`${rowNo}：欠繳／法院狀態要填停繳日`);
+    const closedDate = r['結清日'] ? normDate(r['結清日']) : null;
+    if (r['結清日'] && !closedDate) errors.push(`${rowNo}：結清日格式錯`);
 
     const prepaidMonths = Number(r['預收月數'] || 0);
     if (!(Number.isInteger(prepaidMonths) && prepaidMonths >= 0 && prepaidMonths <= 12)) errors.push(`${rowNo}：預收月數要 0–12 的整數`);
@@ -109,6 +112,7 @@ export function parseXlsx(arrayBuffer) {
       name, principal, rate, startDate, dueDay, prepaidMonths,
       status: status || 'normal',
       overdueSince,
+      closedDate,
       finalReceived,
       writeoff,
       referralFee, appraisalFee,

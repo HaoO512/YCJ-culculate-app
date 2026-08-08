@@ -222,6 +222,7 @@ function validateState(state) {
     if (!(l.dueDay === 'EOM' || (Number.isInteger(l.dueDay) && l.dueDay >= 1 && l.dueDay <= 31))) return `${l.name}：收息日無效`;
     if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) return `${l.name}：狀態無效`;
     if ((l.status === 'overdue' || l.status === 'legal') && !validDate(l.overdueSince)) return `${l.name}：停繳日無效`;
+    if (l.closedDate != null && !validDate(l.closedDate)) return `${l.name}：結清日無效`;
     if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) return `${l.name}：預收月數無效`;
     if (l.referralFee != null && !validMoney(l.referralFee)) return `${l.name}：介紹費無效`;
     if (l.appraisalFee != null && !validMoney(l.appraisalFee)) return `${l.name}：代書費無效`;
