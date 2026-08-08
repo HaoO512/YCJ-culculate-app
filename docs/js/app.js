@@ -895,7 +895,12 @@ const actions = {
 
   'fill-closed'(el) {
     const l = loanById(el.dataset.id);
-    const d = prompt('這筆是哪天結清的？（格式 2026-08-10）\n填了之後，結清前的月份才會正確出現在月報裡。', fmtDate(today()));
+    // 預設帶最近一次收款日僅供參考，避免順手按掉「今天」把舊月報多算好幾個月
+    const lastPay = state.payments.filter(p => p.loanId === l.id)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    const d = prompt(
+      `這筆是哪天結清的？（格式 2026-08-10）\n填了之後，結清前的月份才會正確出現在月報裡。${lastPay ? `\n（最近一次收款是 ${lastPay.date}，僅供參考）` : ''}`,
+      lastPay ? lastPay.date : '');
     if (!d) return;
     const t = d.trim();
     const dd = /^\d{4}-\d{2}-\d{2}$/.test(t) ? parseDate(t) : null;
