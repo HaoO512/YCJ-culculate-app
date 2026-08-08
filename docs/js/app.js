@@ -11,7 +11,8 @@ import { exportXlsx, parseXlsx } from './xlsx-io.js';
 import * as cloud from './cloud.js';
 
 let state = load();
-let route = { view: 'home' };          // home | people | detail | form | problems | stats
+let route = { view: 'home' };          // home | people | detail | form | problems | stats | settings
+let statsTab = 'month';                // month | overview
 let calCursor = null;                  // {y, m} 月曆目前顯示的月份
 let calSelected = null;                // 點選的日子（數字）
 let statsCursor = null;                // {y, m} 月報目前顯示的月份
@@ -54,11 +55,9 @@ function viewHome() {
   const { y, m } = calCursor;
   const active = state.loans.filter(isActive);
 
+  const head = `<div class="title-row"><h1 class="title">今天 ${mdTxt(now)}</h1>${gearBtn()}</div>`;
   if (!active.length && !state.loans.length) {
-    return `
-      <div class="title-row"><h1 class="title">首頁</h1>
-        <span class="date">今天 ${mdTxt(now)}</span></div>
-      <div class="empty">還沒有借款記錄。<br><br>按下面的 <b style="color:var(--accent)">＋</b> 新增第一筆。</div>`;
+    return head + '<div class="empty">還沒有借款記錄。<br><br>到「借款」分頁按「＋ 新增」加第一筆。</div>';
   }
 
   // 本月每筆的收息資訊；借款日之前、預收涵蓋的月份整個跳過（沒事要做，不畫點不列行）
@@ -112,66 +111,35 @@ function viewHome() {
       </button>`;
   };
 
-  let rowsHtml = '';
-  if (calSelected) {
-    const dayList = dues.filter(x => x.day === calSelected);
-    rowsHtml = `<p class="section-h">${m + 1}月${calSelected}日</p>
-      <div class="rowlist">${dayList.map(rowOf).join('') || '<div class="empty">這天沒有要收的錢</div>'}</div>`;
-  } else if (isThisMonth) {
+  // 待辦（只在看本月時出現）
+  let todoHtml = '';
+  if (isThisMonth) {
     const missed = dues.filter(x => !x.paid && !x.problem && x.day < now.getDate());
     const coming = dues.filter(x => !x.paid && !x.problem && x.day >= now.getDate()).slice(0, 3);
     if (missed.length) {
-      rowsHtml += `<p class="section-h" style="color:var(--red)">過了日子還沒記收款</p>
+      todoHtml += `<p class="section-h" style="color:var(--red)">漏收的</p>
         <div class="rowlist">${missed.map(rowOf).join('')}</div>`;
     }
     if (coming.length) {
-      rowsHtml += `<p class="section-h">接下來要收</p>
+      todoHtml += `<p class="section-h">接下來</p>
         <div class="rowlist">${coming.map(rowOf).join('')}</div>`;
     }
     if (!missed.length && !coming.length) {
-      rowsHtml = '<div class="empty">這個月的都處理完了 ✓</div>';
+      todoHtml = '<div class="empty" style="padding:20px 10px">今天沒有要處理的 ✓</div>';
     }
   }
 
-  // 當月狀況（跟著翻的月份走）
-  const rp = monthReport(state, y, m);
-  const monthCard = `
-    <div class="card">
-      <p class="card-label">${y !== now.getFullYear() ? y + '年' : ''}${m + 1}月狀況</p>
-      <div class="stat-grid">
-        <div class="stat"><p class="k">應收</p><p class="n">${money(rp.due)}</p></div>
-        <div class="stat"><p class="k">已收</p><p class="n green">${money(rp.received)}</p></div>
-        <div class="stat wide"><p class="k">還沒收</p>
-          <p class="n ${rp.unpaid ? 'red' : 'green'}">${rp.unpaid ? money(rp.unpaid) : '$0 ✓'}</p></div>
-      </div>
-    </div>`;
-
-  // 備份提醒：有資料且超過 30 天沒匯出（或從未匯出）
-  let backupBanner = '';
-  if (state.loans.length) {
-    const days = state.lastExport
-      ? Math.floor((now - parseDate(state.lastExport)) / 86400000)
-      : null;
-    if (days === null || days > 30) {
-      backupBanner = `
-        <button class="slim notice" data-action="export-xlsx">
-          <span class="l">${days === null ? '還沒備份過' : `上次備份 ${days} 天前`}</span>
-          <span class="r" style="font-size:18px">點我匯出 ›</span>
-        </button>`;
-    }
+  // 點了日子 → 當天名單（放月曆下面）
+  let dayHtml = '';
+  if (calSelected) {
+    const dayList = dues.filter(x => x.day === calSelected);
+    dayHtml = `<p class="section-h">${m + 1}月${calSelected}日</p>
+      <div class="rowlist">${dayList.map(rowOf).join('') || '<div class="empty" style="padding:14px">這天沒有要收的錢</div>'}</div>`;
   }
-
-  const st = stats(state, now);
-  const alertRow = st.problemCount ? `
-    <button class="slim alert" data-action="go" data-view="problems">
-      <span class="l">欠繳 ${st.problemCount} 筆</span>
-      <span class="r">${money(st.overdueInt)}</span>
-    </button>` : '';
 
   return `
-    <div class="title-row"><h1 class="title">首頁</h1>
-      <span class="date">今天 ${mdTxt(now)}</span></div>
-    ${backupBanner}
+    ${head}
+    ${todoHtml}
     <div class="card cal">
       <div class="cal-month-row">
         <span class="cal-month" data-action="cal-today">${y} · ${m + 1}月</span>
@@ -182,16 +150,8 @@ function viewHome() {
       </div>
       <div class="cal-week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
       <div class="cal-grid">${cells}</div>
-      <div class="cal-legend">
-        <span><i class="dot g"></i>收息日</span>
-        <span><i class="dot r"></i>欠繳</span>
-        <span><i class="today-chip"></i>今天</span>
-      </div>
     </div>
-
-    ${rowsHtml}
-    ${alertRow}
-    ${monthCard}
+    ${dayHtml}
   `;
 }
 
@@ -210,9 +170,11 @@ function viewPeople() {
     </button>`).join('');
 
   return `
-    <div class="title-row"><h1 class="title">借款人</h1>
-      <span class="date">共 ${loans.length} 筆</span></div>
-    <div class="rowlist">${rows || '<div class="empty">還沒有借款記錄</div>'}</div>`;
+    <div class="title-row"><h1 class="title">借款（${loans.length}）</h1>
+      <span style="display:flex;gap:8px;align-items:center">
+        <button class="addbtn" data-action="go" data-view="form">＋ 新增</button>${gearBtn()}
+      </span></div>
+    <div class="rowlist">${rows || '<div class="empty">還沒有借款記錄，按上面「＋ 新增」</div>'}</div>`;
 }
 
 // ───────────────────────── 借款人詳情 ─────────────────────────
@@ -247,11 +209,12 @@ function viewDetail() {
       <button class="btn green" data-action="receive" data-id="${l.id}" ${paid ? 'disabled' : ''}>
         ${byPrepaid ? '✓ 本月在預收範圍內' : paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
       </button>
-      <button class="btn outline-grey" data-action="ics-one" data-id="${l.id}">加到行事曆（每月提醒）</button>
-      <div class="btn-pair">
+      <details class="acc"><summary>更多</summary><div class="acc-body">
+        <button class="btn outline-grey" data-action="ics-one" data-id="${l.id}">加到行事曆（每月提醒）</button>
         <button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>
         <button class="btn outline-grey" data-action="close-normal" data-id="${l.id}">結清還本</button>
-      </div>`;
+        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
+      </div></details>`;
   } else if (l.status === 'overdue' || l.status === 'legal') {
     const periods = overduePeriods(l, now);
     const accrued = overdueInterest(l, now, state.payments);
@@ -262,14 +225,14 @@ function viewDetail() {
         <p class="sub">本金 ${money(l.principal)} ＋ 欠 ${periods} 期利息 ${money(accrued)}（${mdTxt(parseDate(l.overdueSince))} 起算）</p>
       </div>
       <button class="btn green" data-action="repay-overdue" data-id="${l.id}">收到補繳，記一筆</button>
-      <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
-      <div class="btn-pair">
+      <details class="acc"><summary>更多</summary><div class="acc-body">
         ${l.status === 'overdue'
-          ? `<button class="btn outline-red" data-action="to-legal" data-id="${l.id}">進法院</button>
-             <button class="btn outline-grey" data-action="back-normal" data-id="${l.id}">恢復正常</button>`
-          : `<button class="btn outline-red" data-action="settle-legal" data-id="${l.id}">結案（填實拿多少）</button>
-             <button class="btn outline-grey" data-action="back-normal" data-id="${l.id}">恢復正常</button>`}
-      </div>`;
+          ? `<button class="btn outline-red" data-action="to-legal" data-id="${l.id}">進法院</button>`
+          : `<button class="btn outline-red" data-action="settle-legal" data-id="${l.id}">結案（填實拿多少）</button>`}
+        <button class="btn outline-grey" data-action="back-normal" data-id="${l.id}">恢復正常</button>
+        <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
+        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
+      </div></details>`;
   } else {
     statusBlock = `
       <div class="card">
@@ -279,7 +242,10 @@ function viewDetail() {
           ${l.writeoff ? `<div><span class="k">壞帳沖銷</span><span class="v red">${money(l.writeoff)}</span></div>` : ''}
         </div>
       </div>
-      <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>`;
+      <details class="acc"><summary>更多</summary><div class="acc-body">
+        <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
+        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
+      </div></details>`;
   }
 
   return `
@@ -311,8 +277,6 @@ function viewDetail() {
 
     <p class="section-h">收款記錄</p>
     <div class="card history">${payRows || '<div class="empty" style="padding:14px">還沒收過款</div>'}</div>
-
-    <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>
   `;
 }
 
@@ -450,51 +414,55 @@ function saveForm(id) {
 function viewProblems() {
   const now = today();
   const probs = state.loans.filter(isProblem);
-  const cards = probs.map(l => {
-    const periods = overduePeriods(l, now);
-    const accrued = overdueInterest(l, now, state.payments);
-    return `
-      <div class="card debt-card" data-action="open-loan" data-id="${l.id}">
-        <div class="top">
-          <span class="who">${esc(l.name)}</span>
-          <span class="chip bad">${STATUS_TXT[l.status]}</span>
-        </div>
-        <div class="kv">
-          <div><span class="k">未還本金</span><span class="v">${money(l.principal)}</span></div>
-          <div><span class="k">已欠</span><span class="v red">${periods} 期</span></div>
-          <div><span class="k">累計欠息</span><span class="v red">${money(accrued)}</span></div>
-          <div><span class="k">停繳日</span><span class="v">${l.overdueSince || '—'}</span></div>
-        </div>
-        ${l.note ? `<p class="debt-note">${esc(l.note)}</p>` : ''}
-      </div>`;
-  }).join('');
+  const head = `<div class="title-row"><h1 class="title">欠繳${probs.length ? `（${probs.length}）` : ''}</h1>${gearBtn()}</div>`;
+  if (!probs.length) return head + '<div class="empty">目前沒有欠繳，很好 👍</div>';
 
   const st = stats(state, now);
-  return `
-    <div class="title-row"><h1 class="title">問題帳</h1>
-      ${probs.length ? `<span class="chip bad">${probs.length} 筆</span>` : ''}</div>
-    ${cards || '<div class="empty">目前沒有欠繳，很好 👍</div>'}
-    ${probs.length ? `
-      <div class="card debt-sum">
-        <p class="card-label" style="color:var(--red)">欠繳總額</p>
-        <p class="num">${money(st.overdueTotal)}</p>
-        <p class="sub">本金 ${money(st.overduePrincipal)} ＋ 欠息 ${money(st.overdueInt)}</p>
-      </div>` : ''}
-  `;
+  const rows = probs.map(l => {
+    const periods = overduePeriods(l, now);
+    const net = overdueInterest(l, now, state.payments);
+    const since = parseDate(l.overdueSince);
+    return `
+      <button class="person-row" data-action="open-loan" data-id="${l.id}">
+        <span class="pcol">
+          <span class="name">${esc(l.name)}${l.status === 'legal' ? ' <span class="chip bad" style="font-size:13px;padding:2px 9px">法院</span>' : ''}</span>
+          <span class="psub">欠 ${periods} 期 · 自 ${since.getMonth() + 1}/${since.getDate()} 起</span>
+        </span>
+        <span class="money" style="color:var(--red)">欠 ${money(net)}</span>
+        <span class="chev">›</span>
+      </button>`;
+  }).join('');
+
+  return head + `
+    <p class="section-h">合計欠息 ${money(st.overdueInt)}｜卡住本金 ${money(st.overduePrincipal)}</p>
+    <div class="rowlist">${rows}</div>`;
 }
 
 // ───────────────────────── 統計 ─────────────────────────
 
+function fmtWan(n) {
+  if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + '萬';
+  return n.toLocaleString('en-US');
+}
+
 function viewStats() {
   const now = today();
   if (!statsCursor) statsCursor = { y: now.getFullYear(), m: now.getMonth() };
+  return `
+    <div class="title-row"><h1 class="title">月報</h1>${gearBtn()}</div>
+    <div class="seg">
+      <button class="${statsTab === 'month' ? 'active' : ''}" data-action="stats-tab" data-tab="month">月報</button>
+      <button class="${statsTab === 'overview' ? 'active' : ''}" data-action="stats-tab" data-tab="overview">總覽</button>
+    </div>
+    ${statsTab === 'month' ? statsMonthView(now) : statsOverview(now)}`;
+}
+
+function statsMonthView(now) {
   const { y, m } = statsCursor;
   const isThisMonth = y === now.getFullYear() && m === now.getMonth();
   const isFuture = y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth());
   const rp = monthReport(state, y, m);
-  const st = stats(state, now);
 
-  // 未收名單（本月/過去=沒收到；未來=預計要收）
   const unpaidRows = rp.unpaidRows.map(r => `
     <button class="slim ${isFuture ? '' : 'alert'}" data-action="open-loan" data-id="${r.loan.id}">
       <span class="l"><small>${r.day}日</small>${esc(r.loan.name)}</span>
@@ -510,75 +478,7 @@ function viewStats() {
       <span class="ok-mark">✓</span>
     </div>`).join('');
 
-  const series = monthlySeries(state.payments, now, 7);
-  const max = Math.max(...series.map(s => s.total), 1);
-  const bars = series.map((s, i) => {
-    const isNow = i === series.length - 1;
-    const h = Math.round(s.total / max * 100);
-    const label = s.total ? `<span class="amt">${s.total.toLocaleString('en-US')}</span>` : '';
-    return `<div class="bar${isNow ? ' now' : ''}">${label}<i style="height:${h}%"></i><b>${s.month + 1}月</b></div>`;
-  }).join('');
-
-  const activeCount = state.loans.filter(isActive).length;
-  const backupTxt = state.lastExport
-    ? `上次匯出：${state.lastExport}`
-    : '還沒匯出過，建議定期匯出備份';
-
-  // ── 錢在哪裡：環圈圖（正常收息中 vs 欠繳中的本金）──
-  const normalP = state.loans.filter(l => l.status === 'normal').reduce((s, l) => s + l.principal, 0);
-  const problemP = st.overduePrincipal;
-  const totalP = normalP + problemP;
-  let donutCard = '';
-  if (totalP > 0) {
-    const C = 2 * Math.PI * 50;
-    const gap = totalP && normalP && problemP ? 4 : 0;   // 兩段之間留縫
-    const segG = Math.max(0, normalP / totalP * C - gap);
-    const segR = Math.max(0, problemP / totalP * C - gap);
-    donutCard = `
-    <div class="card">
-      <p class="card-label">錢在哪裡（放出本金 ${activeCount} 筆）</p>
-      <div class="donut-row">
-        <svg viewBox="0 0 140 140" role="img" aria-label="本金組成">
-          <g transform="rotate(-90 70 70)">
-            ${normalP ? `<circle cx="70" cy="70" r="50" fill="none" stroke="var(--green)" stroke-width="28" stroke-dasharray="${segG} ${C - segG}" stroke-dashoffset="0"/>` : ''}
-            ${problemP ? `<circle cx="70" cy="70" r="50" fill="none" stroke="var(--red)" stroke-width="28" stroke-dasharray="${segR} ${C - segR}" stroke-dashoffset="${-(segG + gap)}"/>` : ''}
-          </g>
-          <text x="70" y="64" text-anchor="middle" font-size="11" fill="var(--sub)" font-weight="700">總本金</text>
-          <text x="70" y="84" text-anchor="middle" font-size="15" fill="var(--ink)" font-weight="800">${money(totalP)}</text>
-        </svg>
-        <div class="dlegend">
-          <div class="li"><i style="background:var(--green)"></i>正常收息中
-            <span class="v">${money(normalP)}</span></div>
-          <div class="li"><i style="background:var(--red)"></i>欠繳中
-            <span class="v">${money(problemP)}</span></div>
-          ${st.overdueInt ? `<div class="li" style="color:var(--red)"><i style="background:none"></i>另有欠息
-            <span class="v">${money(st.overdueInt)}</span></div>` : ''}
-        </div>
-      </div>
-    </div>`;
-  }
-
-  // ── 賺了多少：橫向長條（已收利息 / 付出費用 / 淨收入）──
-  const fees = st.referralTotal + st.appraisalTotal;
-  const hMax = Math.max(st.received, fees, st.net, 1);
-  const hbar = (label, v, color) => `
-    <div class="hbar">
-      <div class="top"><span>${label}</span><span class="v">${money(v)}</span></div>
-      <div class="track"><div class="fill" style="width:${Math.max(v / hMax * 100, v > 0 ? 2 : 0)}%;background:${color}"></div></div>
-    </div>`;
-  const incomeCard = `
-    <div class="card">
-      <p class="card-label">賺了多少（到今天）</p>
-      <div class="hbars">
-        ${hbar('已收利息', st.received, 'var(--green)')}
-        ${hbar('付出費用（介紹＋代書）', fees, '#A08C74')}
-        ${hbar('淨收入', st.net, 'var(--accent)')}
-      </div>
-    </div>`;
-
   return `
-    <div class="title-row"><h1 class="title">統計</h1></div>
-
     <div class="card">
       <div class="cal-month-row">
         <span class="cal-month" data-action="stats-today">${y}年${m + 1}月${isThisMonth ? '（本月）' : ''}</span>
@@ -587,61 +487,118 @@ function viewStats() {
           <button data-action="stats-next" aria-label="下個月">›</button>
         </div>
       </div>
-      <div class="stat-grid">
-        <div class="stat"><p class="k">${m + 1}月應收</p><p class="n">${money(rp.due)}</p></div>
-        <div class="stat"><p class="k">${m + 1}月已收</p><p class="n green">${money(rp.received)}</p></div>
-        <div class="stat wide"><p class="k">${isFuture ? '預計要收' : m + 1 + '月還沒收'}</p>
+      <div class="triple">
+        <div><p class="k">應收</p><p class="n">${money(rp.due)}</p></div>
+        <div><p class="k">已收</p><p class="n green">${money(rp.received)}</p></div>
+        <div><p class="k">${isFuture ? '預計要收' : '還沒收'}</p>
           <p class="n ${rp.unpaid && !isFuture ? 'red' : ''}">${money(rp.unpaid)}</p></div>
       </div>
     </div>
-
     ${unpaidRows ? `<p class="section-h">${isFuture ? '這個月要收的' : '還沒收的'}</p><div class="rowlist">${unpaidRows}</div>` : ''}
     ${payRows ? `<p class="section-h">${m + 1}月收款記錄</p><div class="card history">${payRows}</div>` : ''}
-    ${!unpaidRows && !payRows ? '<div class="empty">這個月沒有收息安排</div>' : ''}
+    ${!unpaidRows && !payRows ? '<div class="empty">這個月沒有收息安排</div>' : ''}`;
+}
 
+function statsOverview(now) {
+  const st = stats(state, now);
+  const activeCount = state.loans.filter(isActive).length;
+
+  // 本金：有欠繳才畫環圈；全正常就一個數字，不畫沒資訊量的全綠圓
+  const normalP = state.loans.filter(l => l.status === 'normal').reduce((s, l) => s + l.principal, 0);
+  const problemP = st.overduePrincipal;
+  const totalP = normalP + problemP;
+  let principalHtml;
+  if (problemP > 0 && totalP > 0) {
+    const C = 2 * Math.PI * 50;
+    const gap = normalP && problemP ? 4 : 0;
+    const segG = Math.max(0, normalP / totalP * C - gap);
+    const segR = Math.max(0, problemP / totalP * C - gap);
+    principalHtml = `
     <div class="card">
-      <p class="card-label">近 7 個月實收利息</p>
+      <p class="card-label">錢在哪裡（${activeCount} 筆）</p>
+      <div class="donut-row">
+        <svg viewBox="0 0 140 140" role="img" aria-label="本金組成">
+          <g transform="rotate(-90 70 70)">
+            ${normalP ? `<circle cx="70" cy="70" r="50" fill="none" stroke="var(--green)" stroke-width="28" stroke-dasharray="${segG} ${C - segG}"/>` : ''}
+            <circle cx="70" cy="70" r="50" fill="none" stroke="var(--red)" stroke-width="28" stroke-dasharray="${segR} ${C - segR}" stroke-dashoffset="${-(segG + gap)}"/>
+          </g>
+          <text x="70" y="64" text-anchor="middle" font-size="11" fill="var(--sub)" font-weight="700">總本金</text>
+          <text x="70" y="84" text-anchor="middle" font-size="15" fill="var(--ink)" font-weight="800">${money(totalP)}</text>
+        </svg>
+        <div class="dlegend">
+          <div class="li"><i style="background:var(--green)"></i>正常收息<span class="v">${money(normalP)}</span></div>
+          <div class="li"><i style="background:var(--red)"></i>欠繳中<span class="v">${money(problemP)}</span></div>
+          ${st.overdueInt ? `<div class="li" style="color:var(--red)"><i style="background:none"></i>另有欠息<span class="v">${money(st.overdueInt)}</span></div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  } else {
+    principalHtml = `
+    <div class="card">
+      <p class="card-label">放出本金（${activeCount} 筆）</p>
+      <p class="hero-num">${money(totalP)}</p>
+    </div>`;
+  }
+
+  const series = monthlySeries(state.payments, now, 7);
+  const max = Math.max(...series.map(s => s.total), 1);
+  const bars = series.map((s, i) => {
+    const isNow = i === series.length - 1;
+    const h = Math.round(s.total / max * 100);
+    const label = s.total ? `<span class="amt">${fmtWan(s.total)}</span>` : '';
+    return `<div class="bar${isNow ? ' now' : ''}">${label}<i style="height:${h}%"></i><b>${s.month + 1}月</b></div>`;
+  }).join('');
+
+  const fees = st.referralTotal + st.appraisalTotal;
+  return `
+    ${principalHtml}
+    <div class="card">
+      <p class="card-label">近 7 個月實收利息（至本月）</p>
       <div class="bars">${bars}</div>
     </div>
-
-    ${donutCard}
-    ${incomeCard}
-
-    <details class="acc">
-      <summary>更多明細</summary>
-      <div class="acc-body">
-        <div class="stat-grid">
-          <div class="stat"><p class="k">今年已收利息</p><p class="n green">${money(st.yearReceived)}</p></div>
-          <div class="stat"><p class="k">歷史已收利息</p><p class="n green">${money(st.received)}</p></div>
-          <div class="stat"><p class="k">介紹費累計</p><p class="n">${money(st.referralTotal)}</p></div>
-          <div class="stat"><p class="k">代書費累計</p><p class="n">${money(st.appraisalTotal)}</p></div>
-          <div class="stat"><p class="k">欠繳總額（本金＋欠息）</p><p class="n red">${money(st.overdueTotal)}</p></div>
-          <div class="stat"><p class="k">壞帳沖銷</p><p class="n">${money(st.writeoffTotal)}</p></div>
-        </div>
+    <div class="card">
+      <p class="card-label">歷史收支</p>
+      <div class="formula">
+        <div class="fr"><span>已收利息</span><span class="v green">${money(st.received)}</span></div>
+        <div class="fr"><span>－ 付出費用</span><span class="v">${money(fees)}</span></div>
+        <p class="fnote">介紹費 ${money(st.referralTotal)} ＋ 代書費 ${money(st.appraisalTotal)}</p>
+        <div class="fr eq"><span>＝ 淨收入</span><span class="v green">${money(st.net)}</span></div>
+        ${st.writeoffTotal ? `<div class="fr"><span>壞帳沖銷</span><span class="v red">${money(st.writeoffTotal)}</span></div>` : ''}
+        <p class="fnote">今年已收利息 ${money(st.yearReceived)}</p>
       </div>
-    </details>
+    </div>`;
+}
 
-    <details class="acc">
-      <summary>雲端同步與備份</summary>
-      <div class="acc-body">
-        <div class="kv">
-          <div><span class="k">狀態</span><span class="v">${syncStatusTxt()}</span></div>
-          <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
-        </div>
-        <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
-        ${cloud.meta().pushOn
-          ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button><p class="hint" style="color:var(--sub);font-size:15px;margin:0">已開自動提醒 —— 行事曆提醒可以不用再加，兩邊都加會重複通知。</p>'
-          : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
-        <div class="btn-pair">
-          <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
-          <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
-        </div>
-        <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
-        <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
-        <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
-        <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
+// ───────────────────────── 設定 ─────────────────────────
+
+function viewSettings() {
+  const backupTxt = state.lastExport
+    ? `上次匯出：${state.lastExport}`
+    : '還沒匯出過，建議定期匯出備份';
+  return `
+    <div class="backrow">
+      <button class="back" data-action="back">‹</button>
+      <h1>設定</h1>
+    </div>
+    <div class="card">
+      <p class="card-label">雲端同步</p>
+      <div class="kv">
+        <div><span class="k">狀態</span><span class="v">${syncStatusTxt()}</span></div>
+        <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
       </div>
-    </details>
+    </div>
+    <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
+    ${cloud.meta().pushOn
+      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button><p class="hint" style="color:var(--sub);font-size:15px;margin:0">已開自動提醒 —— 行事曆提醒可以不用再加，兩邊都加會重複通知。</p>'
+      : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
+    <div class="btn-pair">
+      <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
+      <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
+    </div>
+    <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
+    <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
+    <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
+    <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
   `;
 }
 
@@ -662,19 +619,32 @@ const ICONS = {
   warn: '<svg viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5v.5"/></svg>',
   chart: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>',
 };
+
+// 設定圖示要不要亮紅點（同步出狀況或太久沒備份）
+function needsAttention() {
+  const meta = cloud.meta();
+  if (meta.lastError || meta.pending) return true;
+  if (!state.loans.length) return false;
+  if (!state.lastExport) return true;
+  return Math.floor((today() - parseDate(state.lastExport)) / 86400000) > 30;
+}
+
+function gearBtn() {
+  return `<button class="gearbtn" data-action="go" data-view="settings" aria-label="設定">
+    ${ICONS.gear}${needsAttention() ? '<span class="dot"></span>' : ''}</button>`;
+}
 
 function renderTabbar() {
   const probCount = state.loans.filter(isProblem).length;
   const active = v => (route.view === v || (v === 'home' && route.view === 'detail')) ? ' active' : '';
   $tabbar.innerHTML = `
-    <button class="tab${active('home')}" data-action="go" data-view="home">${ICONS.home}首頁</button>
-    <button class="tab${active('people')}" data-action="go" data-view="people">${ICONS.people}借款人</button>
-    <button class="tab add" data-action="go" data-view="form">
-      <span class="fab">${ICONS.plus}</span>新增</button>
+    <button class="tab${active('home')}" data-action="go" data-view="home">${ICONS.home}今天</button>
+    <button class="tab${active('people')}" data-action="go" data-view="people">${ICONS.people}借款</button>
     <button class="tab${active('problems')}" data-action="go" data-view="problems">
-      <span class="badge-dot">${ICONS.warn}${probCount ? `<span class="n">${probCount}</span>` : ''}</span>問題帳</button>
-    <button class="tab${active('stats')}" data-action="go" data-view="stats">${ICONS.chart}統計</button>`;
+      <span class="badge-dot">${ICONS.warn}${probCount ? `<span class="n">${probCount}</span>` : ''}</span>欠繳</button>
+    <button class="tab${active('stats')}" data-action="go" data-view="stats">${ICONS.chart}月報</button>`;
 }
 
 // ───────────────────────── 渲染 ─────────────────────────
@@ -682,7 +652,7 @@ function renderTabbar() {
 function render() {
   const views = {
     home: viewHome, people: viewPeople, detail: viewDetail,
-    form: viewForm, problems: viewProblems, stats: viewStats,
+    form: viewForm, problems: viewProblems, stats: viewStats, settings: viewSettings,
   };
   $view.innerHTML = (views[route.view] || viewHome)();
   renderTabbar();
@@ -724,6 +694,7 @@ const actions = {
   'stats-prev'() { shiftStatsMonth(-1); },
   'stats-next'() { shiftStatsMonth(1); },
   'stats-today'() { statsCursor = null; render(); },
+  'stats-tab'(el) { statsTab = el.dataset.tab; render(); },
 
   receive(el) {
     const l = loanById(el.dataset.id);

@@ -189,7 +189,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .bar i { display: block; width: 100%; background: var(--green); border-radius: 7px 7px 3px 3px; opacity: .85; min-height: 2px; }
 .bar.now i { background: var(--accent); opacity: .5; }
 .bar b { font-size: 13px; color: var(--sub); font-weight: 700; }
-.bar .amt { font-size: 10px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar .amt { font-size: 14px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* 環圈圖與橫條 */
 .donut-row { display: flex; align-items: center; gap: 16px; }
@@ -203,6 +203,59 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .hbar .top .v { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
 .hbar .track { background: var(--bg); border-radius: 8px; height: 22px; overflow: hidden; }
 .hbar .fill { height: 100%; border-radius: 8px; min-width: 0; }
+
+/* 頁首工具 */
+.gearbtn {
+  width: 46px; height: 46px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--card); display: grid; place-items: center; position: relative; flex: none;
+}
+.gearbtn svg { width: 24px; height: 24px; stroke: var(--sub); fill: none; stroke-width: 2; }
+.gearbtn .dot {
+  position: absolute; top: -4px; right: -4px; width: 13px; height: 13px;
+  border-radius: 999px; background: var(--red); border: 2px solid var(--bg);
+}
+.addbtn {
+  height: 46px; border-radius: 12px; border: 0; background: var(--accent); color: #fff;
+  font-family: inherit; font-size: 17px; font-weight: 800; padding: 0 14px; white-space: nowrap;
+}
+
+/* 分段切換 */
+.seg {
+  display: flex; background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; padding: 4px; gap: 4px;
+}
+.seg button {
+  flex: 1; border: 0; background: none; border-radius: 10px; min-height: 46px;
+  font-family: inherit; font-size: 18px; font-weight: 800; color: var(--sub);
+}
+.seg button.active { background: var(--accent); color: #fff; }
+
+/* 平面三欄（垂直分隔線，不再卡片包卡片） */
+.triple { display: flex; margin-top: 6px; }
+.triple > div { flex: 1; text-align: center; padding: 8px 4px; min-width: 0; }
+.triple > div + div { border-left: 1px solid var(--line); }
+.triple .k { font-size: 15px; color: var(--sub); font-weight: 700; margin: 0; }
+.triple .n { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 3px 0 0; }
+.triple .n.green { color: var(--green); }
+.triple .n.red { color: var(--red); }
+
+/* 收支算式 */
+.formula .fr {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 19px; font-weight: 700; padding: 9px 2px;
+}
+.formula .fr .v { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.formula .fr .v.green { color: var(--green); }
+.formula .fr .v.red { color: var(--red); }
+.formula .fr.eq { border-top: 2px solid var(--line); font-size: 21px; }
+.formula .fnote { font-size: 14px; color: var(--sub); margin: 0 2px 4px; }
+.hero-num { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0 0; }
+
+/* 欠繳緊湊列 */
+.pcol { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pcol .name { font-size: 21px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psub { font-size: 15px; color: var(--sub); font-weight: 600; }
+.chev { color: var(--sub); font-size: 24px; font-weight: 700; flex: none; }
 
 /* 摺疊區 */
 details.acc { background: var(--card); border: 1px solid var(--line); border-radius: 18px; }
