@@ -95,22 +95,56 @@ function viewHome() {
     cells += `<button class="${cls.join(' ')}" data-action="pick-day" data-day="${d}">${d}${dots}</button>`;
   }
 
-  // 下方清單（點日子則過濾）
+  // 下方清單：只列「要行動的」——點了日子看當天；否則只看漏收的＋接下來 3 筆
   const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  const listDues = calSelected ? dues.filter(x => x.day === calSelected) : dues;
-  const rows = listDues.map(x => {
+  const rowOf = x => {
     const l = x.loan;
+    const isToday = isThisMonth && !x.paid && x.day === now.getDate();
     const isTomorrow = isThisMonth && !x.paid && !x.problem &&
       x.day === tomorrow.getDate() && m === tomorrow.getMonth();
-    const cls = x.problem ? 'slim alert' : (isTomorrow ? 'slim notice' : 'slim');
+    const cls = x.problem ? 'slim alert' : (isToday || isTomorrow ? 'slim notice' : 'slim');
     const paidMark = x.paid ? '<span class="paid">✓</span>' : '';
-    const label = x.problem ? '欠繳' : (isTomorrow ? '明天' : '');
+    const label = x.problem ? '欠繳' : (isToday ? '今天' : (isTomorrow ? '明天' : ''));
     return `
       <button class="${cls}" data-action="open-loan" data-id="${l.id}">
         <span class="l"><small>${x.day}日${label ? '·' + label : ''}</small>${esc(l.name)}${paidMark}</span>
         <span class="r">${money(x.problem ? overdueInterest(l, now, state.payments) : monthlyInterest(l))}</span>
       </button>`;
-  }).join('');
+  };
+
+  let rowsHtml = '';
+  if (calSelected) {
+    const dayList = dues.filter(x => x.day === calSelected);
+    rowsHtml = `<p class="section-h">${m + 1}月${calSelected}日</p>
+      <div class="rowlist">${dayList.map(rowOf).join('') || '<div class="empty">這天沒有要收的錢</div>'}</div>`;
+  } else if (isThisMonth) {
+    const missed = dues.filter(x => !x.paid && !x.problem && x.day < now.getDate());
+    const coming = dues.filter(x => !x.paid && !x.problem && x.day >= now.getDate()).slice(0, 3);
+    if (missed.length) {
+      rowsHtml += `<p class="section-h" style="color:var(--red)">過了日子還沒記收款</p>
+        <div class="rowlist">${missed.map(rowOf).join('')}</div>`;
+    }
+    if (coming.length) {
+      rowsHtml += `<p class="section-h">接下來要收</p>
+        <div class="rowlist">${coming.map(rowOf).join('')}</div>`;
+    }
+    if (!missed.length && !coming.length) {
+      rowsHtml = '<div class="empty">這個月的都處理完了 ✓</div>';
+    }
+  }
+
+  // 當月狀況（跟著翻的月份走）
+  const rp = monthReport(state, y, m);
+  const monthCard = `
+    <div class="card">
+      <p class="card-label">${y !== now.getFullYear() ? y + '年' : ''}${m + 1}月狀況</p>
+      <div class="stat-grid">
+        <div class="stat"><p class="k">應收</p><p class="n">${money(rp.due)}</p></div>
+        <div class="stat"><p class="k">已收</p><p class="n green">${money(rp.received)}</p></div>
+        <div class="stat wide"><p class="k">還沒收</p>
+          <p class="n ${rp.unpaid ? 'red' : 'green'}">${rp.unpaid ? money(rp.unpaid) : '$0 ✓'}</p></div>
+      </div>
+    </div>`;
 
   // 備份提醒：有資料且超過 30 天沒匯出（或從未匯出）
   let backupBanner = '';
@@ -155,9 +189,9 @@ function viewHome() {
       </div>
     </div>
 
-    <div class="rowlist">${rows || '<div class="empty">這天沒有要收的錢</div>'}</div>
+    ${rowsHtml}
     ${alertRow}
-    ${st.monthDue ? `<div class="slim total"><span class="l">本月應收</span><span class="r">${money(st.monthDue)}</span></div>` : ''}
+    ${monthCard}
   `;
 }
 
