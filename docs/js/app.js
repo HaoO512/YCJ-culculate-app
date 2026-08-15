@@ -427,9 +427,28 @@ function refreshFormCalc() {
   const rate = Number(document.getElementById('f-rate').value) || 0;
   const mi = Math.round(principal * rate / 100);
   const pmSel = Number(document.getElementById('f-prepaid')?.value) || 0;
+
+  // 即時預覽第一期與下次收息：簽約日跟收息日對不上會當場看到（例：8/15 簽、14 號收 → 首期跳到 9/14）
+  let scheduleRows = '';
+  const sd = document.getElementById('f-start').value;
+  const dvv = document.getElementById('f-dueday').value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) {
+    const tmp = {
+      startDate: sd, dueDay: dvv === 'EOM' ? 'EOM' : Number(dvv),
+      prepaidMonths: pmSel, status: 'normal', principal, rate,
+    };
+    const first = nextCollectDue({ ...tmp, prepaidMonths: 0 }, parseDate(sd));
+    const next = nextCollectDue(tmp, parseDate(sd));
+    const warn = fmtDate(first) !== sd;
+    scheduleRows = `
+      <div><span class="k">第一期收息日</span><span class="v${warn ? ' red' : ''}">${mdTxt(first)}${warn ? '（非簽約日）' : ''}</span></div>
+      ${pmSel ? `<div><span class="k">預收涵蓋後，下次收息</span><span class="v">${mdTxt(next)}</span></div>` : ''}`;
+  }
+
   box.innerHTML = `
     <div><span class="k">每月利息</span><span class="v">${money(mi)}</span></div>
     ${pmSel ? `<div><span class="k">簽約當天收（${pmSel} 個月息）</span><span class="v">${money(mi * pmSel)}</span></div>` : ''}
+    ${scheduleRows}
     <div><span class="k">介紹費（半個月息）</span><span class="v">${money(Math.round(mi / 2))}</span></div>
     <div><span class="k">代書費</span><span class="v">${money(Number(document.getElementById('f-appraisal').value) || 0)}</span></div>`;
   const ref = document.getElementById('f-referral');
@@ -766,11 +785,13 @@ function render() {
       document.getElementById(id).addEventListener('input', refreshFormCalc);
     }
     document.getElementById('f-prepaid').addEventListener('change', refreshFormCalc);
+    document.getElementById('f-dueday').addEventListener('change', refreshFormCalc);
     document.getElementById('f-referral').addEventListener('input', e => { e.target.dataset.touched = '1'; });
     const startEl = document.getElementById('f-start');
     startEl.addEventListener('change', () => {
       const d = startEl.value ? Number(startEl.value.split('-')[2]) : null;
       if (d) document.getElementById('f-dueday').value = String(d);
+      refreshFormCalc();
     });
   }
 }
