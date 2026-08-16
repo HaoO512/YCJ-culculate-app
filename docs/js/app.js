@@ -930,10 +930,31 @@ const actions = {
     if (a == null) return;
     const amount = Number(a);
     if (!(Number.isFinite(amount) && amount > 0)) { alert('金額要是正常的正數'); return; }
+    // 先認清這筆是不是簽約預收款（改完特徵就對不上了，要先判）
+    const pl = loanById(p.loanId);
+    const wasPrepaid = pl && (p.kind === 'prepaid' ||
+      (!p.dueDate && (pl.prepaidMonths || 0) > 0 && p.date === pl.startDate &&
+       p.amount === monthlyInterest(pl) * pl.prepaidMonths));
     p.date = d1.trim();
     if (due) p.dueDate = due; else delete p.dueDate;
     p.amount = amount;
-    delete p.kind;   // 手動更正過就不再被「編輯借款」自動同步覆蓋
+    if (wasPrepaid && pl) {
+      // 預收款金額變了 → 預收月數跟著重算，錢和涵蓋期不准脫鉤
+      if (due) {
+        pl.prepaidMonths = 0;
+        delete p.kind;
+        setTimeout(() => alert('這筆原是簽約預收款；填了歸屬期後改當一般收款，預收月數歸零。'), 300);
+      } else {
+        const mi = monthlyInterest(pl);
+        const k = Math.max(0, Math.min(12, Math.floor(amount / mi)));
+        pl.prepaidMonths = k;
+        if (k > 0) p.kind = 'prepaid'; else delete p.kind;
+        const rem = amount - k * mi;
+        setTimeout(() => alert(`簽約預收款已更正，預收月數同步改為 ${k} 個月${rem > 0 ? `（多出的 ${money(rem)} 併入該月收款）` : ''}。`), 300);
+      }
+    } else {
+      delete p.kind;   // 手動更正過就不再被「編輯借款」自動同步覆蓋
+    }
     commit();
   },
   'del-payment'(el) {

@@ -82,6 +82,17 @@ const mk = () => ({
   assert.ok(src.includes("'edit-payment'"), '收款有更正功能');
   assert.ok(src.includes('const dis = locked'), '已結清欄位停用');
   assert.ok(src.includes('要更正請先撤銷結清'), '鎖定說明與撤銷入口');
+  assert.ok(src.includes('預收月數同步改為'), '更正預收款會重算預收月數');
+}
+
+// ── 邊界：更正預收款金額 → 預收月數重算規則（floor(金額/月息)，上限 12）──
+{
+  const mi = 13000;
+  const k = amt => Math.max(0, Math.min(12, Math.floor(amt / mi)));
+  assert.equal(k(39000), 3, '39000 → 3 個月');
+  assert.equal(k(26000), 2, '26000 → 2 個月');
+  assert.equal(k(26500), 2, '不足整期無條件捨去');
+  assert.equal(k(5000), 0, '不足一期 → 0');
 }
 
 console.log('更正/結清/刪除流程全過');
