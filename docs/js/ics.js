@@ -49,15 +49,11 @@ function vevent(loan) {
 }
 
 // 停止提醒：同一個 UID、重複規則結束日設在昨天 → 行事曆把整串更新成「已結束」，之後不再跳
-export function buildStopICS(loan) {
+function stopVevent(loan) {
   const now = today();
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const start = loan.startDate ? loan.startDate.replace(/-/g, '') : icsDate(yesterday);
   return [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//loanapp//億起記//TW',
-    'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
     `UID:loan-${loan.id}@loanapp`,
     `DTSTAMP:${icsDate(now)}T120000Z`,
@@ -66,18 +62,45 @@ export function buildStopICS(loan) {
     rruleFor(loan.dueDay, icsDate(yesterday)),
     `SUMMARY:${esc(`（已停止）收${loan.name}利息`)}`,
     'END:VEVENT',
+  ];
+}
+
+function wrapCal(lines) {
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//loanapp//億起記//TW',
+    'CALSCALE:GREGORIAN',
+    ...lines,
     'END:VCALENDAR',
   ].join('\r\n') + '\r\n';
 }
 
-export function downloadStopICS(loan) {
-  const blob = new Blob([buildStopICS(loan)], { type: 'text/calendar;charset=utf-8' });
+export function buildStopICS(loan) {
+  return wrapCal(stopVevent(loan));
+}
+
+// 所有借款的停止事件合成一個檔：曾加過行事曆的人一次清掉舊提醒
+export function buildStopAllICS(loans) {
+  return wrapCal(loans.flatMap(stopVevent));
+}
+
+function downloadICSFile(content, filename) {
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `停止提醒-${loan.name}.ics`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+}
+
+export function downloadStopICS(loan) {
+  downloadICSFile(buildStopICS(loan), `停止提醒-${loan.name}.ics`);
+}
+
+export function downloadStopAllICS(loans) {
+  downloadICSFile(buildStopAllICS(loans), '停止全部收息提醒.ics');
 }
 
 export function buildICS(loans) {

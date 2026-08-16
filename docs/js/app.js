@@ -7,13 +7,14 @@ import {
   isActive, isProblem, stats, monthlySeries, monthReport, money,
   upcomingDues, missedDues, missedPeriods,
 } from './calc.js';
-import { downloadICS, downloadStopICS } from './ics.js';
+import { downloadICS, downloadStopAllICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
 import * as cloud from './cloud.js';
 
 let state = load();
 let route = { view: 'home' };          // home | people | detail | form | problems | stats | settings
 let statsTab = 'month';                // month | overview
+let peopleTab = 'running';             // running | closed
 let calCursor = null;                  // {y, m} 月曆目前顯示的月份
 let calSelected = null;                // 點選的日子（數字）
 let statsCursor = null;                // {y, m} 月報目前顯示的月份
@@ -265,31 +266,44 @@ function viewPeople() {
     (order[a.status] - order[b.status]) || a.name.localeCompare(b.name, 'zh-Hant'));
   const closed = state.loans.filter(l => l.status === 'closed')
     .sort((a, b) => (b.closedDate || '').localeCompare(a.closedDate || ''));
+  const list = peopleTab === 'running' ? running : closed;
+
+  const CHECK = '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+  const WARN = '<svg viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5v.5"/></svg>';
+  const icon = l => l.status === 'closed'
+    ? `<span class="picon done">${CHECK}</span>`
+    : (isProblem(l) ? `<span class="picon bad">${WARN}</span>` : `<span class="picon ok">${CHECK}</span>`);
 
   const rowOf = l => {
     const right = l.status === 'closed'
-      ? (l.closedDate
-          ? `結清 ${(d => d.getMonth() + 1 + '/' + d.getDate())(parseDate(l.closedDate))}`
-          : '結清日未填')
-      : money(monthlyInterest(l));
+      ? `<span class="amt" style="font-size:18px;color:var(--sub)">${l.closedDate
+          ? '結清 ' + (d => d.getMonth() + 1 + '/' + d.getDate())(parseDate(l.closedDate))
+          : '結清日未填'}</span>`
+      : `<span class="amt">${money(monthlyInterest(l))}</span><span class="sub">每月利息</span>`;
     return `
-    <button class="person-row" data-action="open-loan" data-id="${l.id}">
-      <span class="name">${esc(l.name)}</span>
-      <span class="chip ${STATUS_CHIP[l.status]}">${STATUS_TXT[l.status]}</span>
-      <span class="money" ${l.status === 'closed' ? 'style="font-size:17px;color:var(--sub)"' : ''}>${right}</span>
-    </button>`;
+      <button class="prow" data-action="open-loan" data-id="${l.id}">
+        ${icon(l)}
+        <span class="mid">
+          <span class="nm">${esc(l.name)}</span>
+          <span class="stt ${l.status === 'normal' ? 'g' : isProblem(l) ? 'r' : ''}">${STATUS_TXT[l.status]}</span>
+        </span>
+        <span class="right">${right}</span>
+        <span class="chev">›</span>
+      </button>`;
   };
 
   return `
-    <div class="title-row"><h1 class="title">借款（進行中 ${running.length}）</h1>
+    <div class="title-row"><h1 class="title">借款</h1>
       <span style="display:flex;gap:8px;align-items:center">
         <button class="addbtn" data-action="go" data-view="form">＋ 新增</button>${gearBtn()}
       </span></div>
-    <div class="rowlist">${running.map(rowOf).join('') || '<div class="empty">還沒有借款記錄，按上面「＋ 新增」</div>'}</div>
-    ${closed.length ? `
-      <details class="acc"><summary>已結清（${closed.length}）</summary><div class="acc-body">
-        <div class="rowlist">${closed.map(rowOf).join('')}</div>
-      </div></details>` : ''}`;
+    <div class="seg">
+      <button class="${peopleTab === 'running' ? 'active' : ''}" data-action="people-tab" data-tab="running">進行中 ${running.length}</button>
+      <button class="${peopleTab === 'closed' ? 'active' : ''}" data-action="people-tab" data-tab="closed">已結清 ${closed.length}</button>
+    </div>
+    ${list.length
+      ? `<div class="card plist">${list.map(rowOf).join('')}</div>`
+      : `<div class="empty">${peopleTab === 'running' ? '還沒有進行中的借款，按上面「＋ 新增」' : '沒有已結清的帳'}</div>`}`;
 }
 
 // ───────────────────────── 借款人詳情 ─────────────────────────
@@ -497,7 +511,7 @@ function viewForm() {
       <textarea id="f-note">${esc(l.note)}</textarea></div>
 
     <button class="btn accent" data-action="save-form" data-id="${editing ? editing.id : ''}">
-      ${editing ? '儲存修改' : '存好，之後記得加到行事曆'}</button>
+      ${editing ? '儲存修改' : '儲存借款'}</button>
   `;
 }
 
@@ -578,9 +592,6 @@ async function saveForm(id) {
     const oldMi = monthlyInterest(l);
     const oldPm = l.prepaidMonths || 0;
     const oldStart = l.startDate;
-    const remindChanged = l.status === 'normal' &&
-      (l.dueDay !== dueDay || l.principal !== principal || l.rate !== rate ||
-       l.name !== name || l.startDate !== startDate || (l.prepaidMonths || 0) !== prepaidMonths);
     Object.assign(l, { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, appraisalFee, note });
 
     // 簽約預收款跟著改，不留舊金額舊日期的錯帳
@@ -614,12 +625,6 @@ async function saveForm(id) {
     }
 
     save(state); go('detail', { id });
-    if (remindChanged) {
-      setTimeout(() => {
-        downloadICS([l], `收息提醒-${l.name}.ics`);
-        alert('提醒內容有變，行事曆更新檔已下載：點開按「加入」即覆蓋舊提醒。');
-      }, 300);
-    }
   } else {
     const loan = {
       id: newId(), name, principal, rate, startDate, dueDay, prepaidMonths,
@@ -634,11 +639,6 @@ async function saveForm(id) {
     }
     navFrom.detail = navFrom.form;   // 新增表單進詳情：返回要回到開表單前的分頁
     save(state); go('detail', { id: loan.id });
-    // 行事曆檔自動下載，少按一顆按鈕
-    setTimeout(() => {
-      downloadICS([loan], `收息提醒-${loan.name}.ics`);
-      alert(`存好了！${prepaidMonths ? `已記一筆預收 ${money(mi * prepaidMonths)}。` : ''}\n行事曆檔已自動下載：點開它按「加入」，提醒就設好了${prepaidMonths ? '（會自動從預收期之後才開始跳）' : ''}。`);
-    }, 300);
   }
 }
 
@@ -839,45 +839,64 @@ function viewPayEdit() {
 // ───────────────────────── 設定 ─────────────────────────
 
 function viewSettings() {
-  const backupTxt = state.lastExport
-    ? `上次匯出：${state.lastExport}`
-    : '還沒匯出過，建議定期匯出備份';
+  const m = cloud.meta();
+  const backupTxt = state.lastExport ? `上次匯出 ${state.lastExport}` : '還沒匯出過';
+  let syncShort;
+  if (m.lastError) syncShort = '同步被拒';
+  else if (m.pending) syncShort = '待同步';
+  else if (m.lastSync) {
+    const min = Math.floor((Date.now() - m.lastSync) / 60000);
+    syncShort = min < 1 ? '剛剛完成 ✓' : min < 60 ? `${min} 分鐘前 ✓` : `${Math.floor(min / 60)} 小時前 ✓`;
+  } else syncShort = '尚未同步';
+
   return `
     <div class="backrow">
       <button class="back" data-action="back">‹</button>
       <h1>設定</h1>
     </div>
 
-    <p class="section-h">同步與通知</p>
-    <div class="card">
-      <div class="kv">
-        <div><span class="k">同步狀態</span><span class="v">${syncStatusTxt()}</span></div>
-        <div><span class="k">自動提醒</span><span class="v">${cloud.meta().pushOn ? '已開啟' : '未開啟'}</span></div>
-      </div>
+    <p class="section-h">通知與同步</p>
+    <div class="card plist">
+      <div class="srow"><span class="sic">☁️</span>
+        <span class="lbl"><span class="t">資料同步</span></span>
+        <span class="val">${syncShort}</span></div>
+      <div class="srow"><span class="sic">🔔</span>
+        <span class="lbl"><span class="t">通知提醒</span></span>
+        <span class="val">${m.pushOn ? '已開啟' : '未開啟'}</span></div>
     </div>
-    <button class="btn accent" data-action="cloud-sync-now">立刻同步</button>
-    ${cloud.meta().pushOn
-      ? '<button class="btn outline-grey" data-action="cloud-push-test">測試提醒（馬上跳一則通知）</button>'
-      : '<button class="btn accent" data-action="cloud-push-enable">開啟自動提醒（免行事曆）</button>'}
+    ${m.lastError ? `<p class="hint" style="color:var(--red);font-size:17px;margin:0 2px">同步被拒：${esc(m.lastError)}（資料仍在手機）</p>` : ''}
+    <button class="btn accent mid" data-action="cloud-sync-now">↻ 立即同步</button>
+    ${m.pushOn
+      ? `<button class="card srow" data-action="cloud-push-test"><span class="sic">🔔</span>
+          <span class="lbl"><span class="t">測試通知</span><span class="s">立即傳送一則測試</span></span>
+          <span class="chev">›</span></button>`
+      : `<button class="card srow" data-action="cloud-push-enable"><span class="sic">🔔</span>
+          <span class="lbl"><span class="t">開啟通知提醒</span><span class="s">收息前一天與當天 09:30 自動通知</span></span>
+          <span class="chev">›</span></button>`}
 
-    <p class="section-h">行事曆</p>
-    <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
-    <p class="hint" style="color:var(--sub);font-size:17px;margin:0 2px">${cloud.meta().pushOn
-      ? '已開自動提醒 —— 行事曆可以不用再加，兩邊都加會重複通知。'
-      : '行事曆會在收息日前一天與當天 09:30 各提醒一次；開了上面的自動提醒就不需要。'}</p>
-
-    <p class="section-h">備份</p>
-    <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
-    <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
-    <p class="hint" style="text-align:center;color:var(--sub);font-size:17px;margin:0">${backupTxt}</p>
-
-    <details class="acc"><summary>進階（同步金鑰）</summary><div class="acc-body">
-      <p class="hint" style="color:var(--sub);font-size:17px;margin:0">金鑰＝資料的鑰匙。抄下收好；換手機或第二台裝置輸入它連回同一份帳。</p>
-      <div class="btn-pair">
-        <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
-        <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
-      </div>
-    </div></details>
+    <p class="section-h">其他設定</p>
+    <details class="acc"><summary class="srow-sum"><span class="sic">📅</span>
+      <span class="lbl"><span class="t">行事曆（選用）</span><span class="s">只有手動按下才會下載</span></span></summary>
+      <div class="acc-body">
+        <button class="btn outline-grey mid" data-action="ics-all">下載全部行事曆提醒</button>
+        <button class="btn outline-grey mid" data-action="ics-stop-all">停止所有舊行事曆提醒</button>
+        <p class="hint" style="color:var(--sub);font-size:17px;margin:0">如果以前加過行事曆提醒，下載停止檔加入一次即可全部清掉。</p>
+      </div></details>
+    <details class="acc"><summary class="srow-sum"><span class="sic">🔑</span>
+      <span class="lbl"><span class="t">同步金鑰</span><span class="s">換手機、第二台裝置用</span></span></summary>
+      <div class="acc-body">
+        <p class="hint" style="color:var(--sub);font-size:17px;margin:0">金鑰＝資料的鑰匙，抄下收好。</p>
+        <div class="btn-pair">
+          <button class="btn outline-grey" data-action="cloud-show-key">顯示金鑰</button>
+          <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
+        </div>
+      </div></details>
+    <details class="acc"><summary class="srow-sum"><span class="sic">📦</span>
+      <span class="lbl"><span class="t">備份與匯入</span><span class="s">${backupTxt}</span></span></summary>
+      <div class="acc-body">
+        <button class="btn outline-grey mid" data-action="export-xlsx">匯出 Excel 檔</button>
+        <button class="btn outline-grey mid" data-action="import-xlsx">匯入 Excel 檔</button>
+      </div></details>
   `;
 }
 
@@ -916,6 +935,8 @@ function gearBtn() {
 }
 
 function renderTabbar() {
+  // 設定頁隱藏底部導覽：避免「正在設定但月報被選中」的矛盾
+  $tabbar.style.display = route.view === 'settings' ? 'none' : '';
   const probCount = state.loans.filter(isProblem).length;
   const current = TAB_VIEWS.includes(route.view) ? route.view : lastTab;
   const active = v => current === v ? ' active' : '';
@@ -984,6 +1005,7 @@ const actions = {
   'stats-next'() { shiftStatsMonth(1); },
   'stats-today'() { statsCursor = null; render(); },
   'stats-tab'(el) { statsTab = el.dataset.tab; render(); },
+  'people-tab'(el) { peopleTab = el.dataset.tab; render(); },
 
   async receive(el) {
     const l = loanById(el.dataset.id);
@@ -1115,8 +1137,7 @@ const actions = {
     const final = fmtDate(snap);
     l.status = 'overdue'; l.overdueSince = final;
     commit();
-    downloadStopICS(l);
-    setTimeout(() => alert(`已列入問題帳，欠息從收息日 ${final} 起算${final !== t ? `（你填 ${t}，已自動對齊）` : ''}。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。`), 300);
+    setTimeout(() => alert(`已標記欠繳，欠息從 ${final} 起算${final !== t ? `（你填 ${t}，已自動對齊到收息日）` : ''}。`), 300);
   },
   async 'back-normal'(el) {
     const l = loanById(el.dataset.id);
@@ -1128,8 +1149,7 @@ const actions = {
     if (!ok) return;
     l.status = 'normal'; l.overdueSince = null;
     commit();
-    downloadICS([l], `收息提醒-${l.name}.ics`);
-    setTimeout(() => alert('已恢復正常。\n行事曆檔已下載：點開按「加入」，每月提醒就接回來了。'), 300);
+    setTimeout(() => alert('已恢復正常收息。'), 300);
   },
   async 'to-legal'(el) {
     const l = loanById(el.dataset.id);
@@ -1167,8 +1187,7 @@ const actions = {
         await confirmPanel({ title: '欠息已補齊', lines: [l.name, { sub: '恢復正常收息？' }], ok: '恢復正常' })) {
       l.status = 'normal'; l.overdueSince = null;
       commit();
-      downloadICS([l], `收息提醒-${l.name}.ics`);
-      setTimeout(() => alert('已恢復正常。\n行事曆檔已下載：點開按「加入」，每月提醒就接回來了。'), 300);
+    setTimeout(() => alert('已恢復正常收息。'), 300);
     }
   },
   async 'settle-legal'(el) {
@@ -1195,8 +1214,7 @@ const actions = {
     l.status = 'closed';
     l.closedDate = fmtDate(now);
     commit();
-    downloadStopICS(l);
-    setTimeout(() => alert(`結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}\n「停止提醒」檔已自動下載：點開按「加入」。`), 300);
+    setTimeout(() => alert(`法院案件已結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}`), 300);
   },
   async 'close-normal'(el) {
     const l = loanById(el.dataset.id);
@@ -1234,8 +1252,7 @@ const actions = {
     l.status = 'closed';
     l.closedDate = fmtDate(today());
     commit();
-    downloadStopICS(l);
-    setTimeout(() => alert('已結清。\n「停止提醒」檔已自動下載：點開它按「加入」，行事曆的每月提醒就停了。'), 300);
+
   },
   async 'delete-loan'(el) {
     const l = loanById(el.dataset.id);
@@ -1249,11 +1266,9 @@ const actions = {
       ok: '刪除錯帳', danger: true,
     });
     if (!ok) return;
-    downloadStopICS(l);
     state.loans = state.loans.filter(x => x.id !== l.id);
     state.payments = state.payments.filter(p => p.loanId !== l.id);
     save(state); go('people');
-    setTimeout(() => alert('已刪除。\n「停止提醒」檔已下載：點開按「加入」，行事曆的提醒才會跟著停。'), 300);
   },
 
   async 'reopen'(el) {
@@ -1271,8 +1286,7 @@ const actions = {
     l.overdueSince = null;   // 法院案撤銷不留舊停繳日，避免殘留隱藏日期
     save(state);
     go('detail', { id: l.id });
-    downloadICS([l], `收息提醒-${l.name}.ics`);
-    setTimeout(() => alert('已撤銷結清，回到正常收息。\n行事曆檔已下載：點開按「加入」，提醒接回來。'), 300);
+    setTimeout(() => alert('已撤銷結清，回到正常收息。'), 300);
   },
   async 'delegal'(el) {
     const l = loanById(el.dataset.id);
@@ -1302,18 +1316,15 @@ const actions = {
     l.closedDate = t;
     commit();
   },
-  'ics-one'(el) {
-    const l = loanById(el.dataset.id);
-    downloadICS([l], `收息提醒-${l.name}.ics`);
-  },
-  'ics-stop'(el) {
-    downloadStopICS(loanById(el.dataset.id));
-    setTimeout(() => alert('打開下載的檔案按「加入」，這筆的每月提醒就會停。\n若行事曆裡看到「（已停止）」的舊事件，點它刪掉即可。'), 300);
-  },
+  // 行事曆是手動選用功能：只有設定頁的兩顆按鈕會觸發下載
   'ics-all'() {
     const normals = state.loans.filter(l => l.status === 'normal');
     if (!normals.length) { alert('沒有正常收息中的借款'); return; }
     downloadICS(normals, '收息提醒-全部.ics');
+  },
+  'ics-stop-all'() {
+    if (!state.loans.length) { alert('沒有借款資料'); return; }
+    downloadStopAllICS(state.loans);
   },
   'export-xlsx'() {
     exportXlsx(state);

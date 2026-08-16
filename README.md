@@ -28,7 +28,7 @@
 
 - 後端：`worker/` = Cloudflare Worker（yiqiji-sync.haoo512.workers.dev），免費額度
 - 資料：帳目自動同步到 Cloudflare KV，雲端每日自動快照保留 31 天
-- 提醒：統計頁「開啟自動提醒」後，收息前一天與當天 09:30 自動推播，免行事曆
+- 提醒：系統推播是預設提醒方式（前一天與當天 09:30）。行事曆匯出僅為手動選用功能，任何記帳、編輯或狀態變更都不會自動下載行事曆檔
 - 金鑰：統計頁「顯示同步金鑰」，換手機輸入金鑰即可取回全部資料
 - 部署後端：`cd worker && npx wrangler deploy`
 - 測試：`node tests/test-calc.mjs`、`tests/test-prepaid.mjs`、`tests/test-io.mjs`
