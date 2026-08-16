@@ -5,7 +5,7 @@ import {
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth, monthPaidAmount,
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
-  upcomingDues, missedDues,
+  upcomingDues, missedDues, missedPeriods,
 } from './calc.js';
 import { downloadICS, downloadStopICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
@@ -254,6 +254,7 @@ function viewDetail() {
       ${periodTag(p)}
       <span class="amount">${money(p.amount)}</span>
       <span class="ok-mark">✓</span>
+      <button class="del" data-action="edit-payment" data-id="${p.id}" aria-label="更正" style="color:var(--accent)">改</button>
       <button class="del" data-action="del-payment" data-id="${p.id}" aria-label="刪除">✕</button>
     </div>`).join('');
 
@@ -278,11 +279,13 @@ function viewDetail() {
           ${byPrepaid ? '✓ 本月在預收範圍內' : paid ? '✓ 本月利息已收' : `收到 ${now.getMonth() + 1} 月利息了`}
         </button>`;
     }
+    primary += `
+      <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正資料</button>`;
     more = `
         <button class="btn outline-grey" data-action="ics-one" data-id="${l.id}">加到行事曆（每月提醒）</button>
         ${missedItem ? '' : `<button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>`}
         <button class="btn outline-grey" data-action="close-normal" data-id="${l.id}">結清還本</button>
-        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除誤建資料</button>`;
   } else if (l.status === 'overdue' || l.status === 'legal') {
     const periods = overduePeriods(l, now);
     const accrued = overdueInterest(l, now, state.payments);
@@ -292,14 +295,16 @@ function viewDetail() {
         <p class="num">${money(l.principal + accrued)}</p>
         <p class="sub">本金 ${money(l.principal)} ＋ 欠 ${periods} 期利息 ${money(accrued)}（${mdTxt(parseDate(l.overdueSince))} 起算）</p>
       </div>
-      <button class="btn green" data-action="repay-overdue" data-id="${l.id}">收到補繳，記一筆</button>`;
+      <button class="btn green" data-action="repay-overdue" data-id="${l.id}">收到補繳，記一筆</button>
+      <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正資料</button>`;
     more = `
         ${l.status === 'overdue'
           ? `<button class="btn outline-red" data-action="to-legal" data-id="${l.id}">進法院</button>`
-          : `<button class="btn outline-red" data-action="settle-legal" data-id="${l.id}">結案（填實拿多少）</button>`}
+          : `<button class="btn outline-red" data-action="settle-legal" data-id="${l.id}">結案（填實拿多少）</button>
+             <button class="btn outline-grey" data-action="delegal" data-id="${l.id}">撤銷法院狀態（回到欠繳）</button>`}
         <button class="btn outline-grey" data-action="back-normal" data-id="${l.id}">恢復正常</button>
         <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
-        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除誤建資料</button>`;
   } else {
     primary = `
       <div class="card">
@@ -309,12 +314,13 @@ function viewDetail() {
           ${l.finalReceived != null ? `<div><span class="k">結案實收</span><span class="v">${money(l.finalReceived)}</span></div>` : ''}
           ${l.writeoff ? `<div><span class="k">壞帳沖銷</span><span class="v red">${money(l.writeoff)}</span></div>` : ''}
         </div>
-      </div>`;
+      </div>
+      <button class="btn accent" data-action="reopen" data-id="${l.id}">撤銷結清（誤按或要更正時用）</button>
+      <button class="btn outline-grey" data-action="edit" data-id="${l.id}">修改姓名／費用／備註</button>`;
     more = `
         ${l.closedDate ? '' : `<button class="btn accent" data-action="fill-closed" data-id="${l.id}">補填結清日</button>`}
-        <button class="btn outline-red" data-action="reopen" data-id="${l.id}">撤銷結清（誤按時用）</button>
         <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
-        <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除誤建資料</button>`;
   }
 
   // 最近 3 筆收款：每天最常確認的是「上次何時收到」
@@ -367,6 +373,8 @@ function viewDetail() {
 
 function viewForm() {
   const editing = route.id ? loanById(route.id) : null;
+  const locked = !!(editing && editing.status === 'closed');
+  const dis = locked ? 'disabled' : '';
   const l = editing || {
     name: '', principal: '', rate: 2,
     startDate: fmtDate(today()), dueDay: today().getDate(),
@@ -386,21 +394,24 @@ function viewForm() {
       <button class="back" data-action="back">‹</button>
       <h1>${editing ? '編輯借款' : '新增借款'}</h1>
     </div>
-    ${editing ? '<p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
+    ${locked ? `
+      <p class="hint" style="color:var(--red);font-size:16px;font-weight:700;margin:0 2px">已結清：金額與日期已鎖定。要更正請先撤銷結清。</p>
+      <button class="btn accent" data-action="reopen" data-id="${editing.id}">撤銷結清</button>`
+    : editing ? '<p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
 
     <div class="field"><label>借款人姓名</label>
       <input id="f-name" value="${esc(l.name)}" placeholder="王小明"></div>
     <div class="field"><label>本金</label>
-      <input id="f-principal" inputmode="numeric" value="${l.principal}" placeholder="600000"></div>
+      <input id="f-principal" inputmode="numeric" value="${l.principal}" placeholder="600000" ${dis}></div>
     <div class="field"><label>月利率 %（1.5–2）</label>
-      <input id="f-rate" inputmode="decimal" value="${l.rate}"></div>
+      <input id="f-rate" inputmode="decimal" value="${l.rate}" ${dis}></div>
     <div class="field"><label>借款日期</label>
-      <input id="f-start" type="date" value="${l.startDate}"></div>
+      <input id="f-start" type="date" value="${l.startDate}" ${dis}></div>
     <div class="field"><label>收息日（每月幾號）</label>
-      <select id="f-dueday">${dayOptions.join('')}</select>
+      <select id="f-dueday" ${dis}>${dayOptions.join('')}</select>
       <span class="hint">29–31 號：當月沒有該號時自動改當月最後一天</span></div>
     <div class="field"><label>簽約預收利息</label>
-      <select id="f-prepaid">${pmOptions}</select>
+      <select id="f-prepaid" ${dis}>${pmOptions}</select>
       <span class="hint">簽約當天一次收走前幾個月利息，提醒自動從之後開始</span></div>
 
     <div class="calc-panel">
@@ -417,7 +428,6 @@ function viewForm() {
 
     <button class="btn accent" data-action="save-form" data-id="${editing ? editing.id : ''}">
       ${editing ? '儲存修改' : '存好，之後記得加到行事曆'}</button>
-    ${editing ? '<button class="btn outline-red" data-action="delete-loan" data-id="' + editing.id + '">刪除這筆借款</button>' : ''}
   `;
 }
 
@@ -894,21 +904,36 @@ const actions = {
   },
   'receive-missed'(el) {
     const l = loanById(el.dataset.id);
-    const mi = monthlyInterest(l);
-    // 重走一次漏收清單，每期記在原收息日，月報才對得上
-    const list = [];
-    let d = nextCollectDue(l, parseDate(l.startDate));
-    let guard = 0;
-    while (d < today() && guard++ < 36) {
-      if (!settledInMonth(state.payments, l, d.getFullYear(), d.getMonth())) list.push(new Date(d));
-      d = dueDateFor(d.getFullYear(), d.getMonth() + 1, l.dueDay);
-    }
+    // 各期只補「剩餘金額」：已有部分款不會被重複加成超額
+    const list = missedPeriods(state, l, today());
     if (!list.length) { render(); return; }
-    if (!confirm(`補收 ${list.length} 期，共 ${money(mi * list.length)}？\n（補 ${list.map(x => (x.getMonth() + 1) + '/' + x.getDate()).join('、')} 期）\n收款日記今天，各期歸屬原收息日。`)) return;
+    const total = list.reduce((s, x) => s + x.remaining, 0);
+    if (!confirm(`補收 ${list.length} 期，共 ${money(total)}？\n（${list.map(x => `${x.date.getMonth() + 1}/${x.date.getDate()} 補 ${money(x.remaining)}`).join('、')}）\n收款日記今天，各期歸屬原收息日。`)) return;
     const todayStr = fmtDate(today());
-    for (const dd of list) {
-      state.payments.push({ id: newId(), loanId: l.id, date: todayStr, dueDate: fmtDate(dd), amount: mi });
+    for (const x of list) {
+      state.payments.push({ id: newId(), loanId: l.id, date: todayStr, dueDate: fmtDate(x.date), amount: x.remaining });
     }
+    commit();
+  },
+  'edit-payment'(el) {
+    const p = state.payments.find(x => x.id === el.dataset.id);
+    if (!p) return;
+    const vd = t => /^\d{4}-\d{2}-\d{2}$/.test(t) && fmtDate(parseDate(t)) === t;
+    const d1 = prompt('實際收款日（格式 2026-08-16）：', p.date);
+    if (d1 == null) return;
+    if (!vd(d1.trim())) { alert('日期格式要像 2026-08-16'); return; }
+    const d2 = prompt('歸屬期＝這筆錢是繳哪個月的利息（留空＝跟收款日同月）：', p.dueDate || '');
+    if (d2 == null) return;
+    const due = d2.trim();
+    if (due && !vd(due)) { alert('歸屬期格式要像 2026-07-14'); return; }
+    const a = prompt('金額：', String(p.amount));
+    if (a == null) return;
+    const amount = Number(a);
+    if (!(Number.isFinite(amount) && amount > 0)) { alert('金額要是正常的正數'); return; }
+    p.date = d1.trim();
+    if (due) p.dueDate = due; else delete p.dueDate;
+    p.amount = amount;
+    delete p.kind;   // 手動更正過就不再被「編輯借款」自動同步覆蓋
     commit();
   },
   'del-payment'(el) {
@@ -1014,12 +1039,12 @@ const actions = {
   },
   'delete-loan'(el) {
     const l = loanById(el.dataset.id);
-    if (state.payments.some(p => p.loanId === l.id)) {
-      alert('這筆帳有收款記錄，不能刪除（會改寫過去月報）。\n請改用「結清還本」。');
-      return;
-    }
-    if (!confirm(`確定刪除 ${l.name} 這筆借款？收款記錄也會一起刪。`)) return;
-    if (!confirm('再確認一次：刪了就救不回來（除非有 Excel 備份）。')) return;
+    const pays = state.payments.filter(p => p.loanId === l.id);
+    const total = pays.reduce((s, p) => s + p.amount, 0);
+    const msg = pays.length
+      ? `刪除「${l.name}」？\n這會一起刪除 ${pays.length} 筆收款，共 ${money(total)}，過去月報也會更新。\n此功能只用於誤建或輸入錯誤。`
+      : `刪除「${l.name}」？\n此功能只用於誤建或輸入錯誤。`;
+    if (!confirm(msg)) return;
     downloadStopICS(l);
     state.loans = state.loans.filter(x => x.id !== l.id);
     state.payments = state.payments.filter(p => p.loanId !== l.id);
@@ -1036,9 +1061,16 @@ const actions = {
     l.finalReceived = null;
     l.writeoff = null;
     l.overdueSince = null;   // 法院案撤銷不留舊停繳日，避免殘留隱藏日期
-    commit();
+    save(state);
+    go('detail', { id: l.id });
     downloadICS([l], `收息提醒-${l.name}.ics`);
     setTimeout(() => alert('已撤銷結清，回到正常收息。\n行事曆檔已下載：點開按「加入」，提醒接回來。'), 300);
+  },
+  'delegal'(el) {
+    const l = loanById(el.dataset.id);
+    if (!confirm(`撤銷法院狀態，「${l.name}」回到欠繳？\n（停繳日 ${l.overdueSince} 保留，欠息照算）`)) return;
+    l.status = 'overdue';
+    commit();
   },
   'fill-closed'(el) {
     const l = loanById(el.dataset.id);

@@ -235,22 +235,31 @@ export function upcomingDues(state, now, count = 3, excludeIds = null) {
   return out.sort((a, b) => a.date - b.date).slice(0, count);
 }
 
-// 跨月：所有「過了收息日還沒記收款」的帳（直到記收款或標欠繳才消失）
+// 單筆借款：過了收息日還沒收齊的期，各期附「剩餘該補的金額」（部分款已扣）
+export function missedPeriods(state, loan, now) {
+  const out = [];
+  const mi = monthlyInterest(loan);
+  let d = nextCollectDue(loan, parseDate(loan.startDate));
+  let guard = 0;
+  while (d < now && guard++ < 36) {
+    const remaining = mi - monthPaidAmount(state.payments, loan.id, d.getFullYear(), d.getMonth());
+    if (remaining > 0) out.push({ date: new Date(d), remaining });
+    d = dueDateFor(d.getFullYear(), d.getMonth() + 1, loan.dueDay);
+  }
+  return out;
+}
+
+// 跨月：所有「過了收息日還沒收齊」的帳（直到收齊或標欠繳才消失）
 export function missedDues(state, now) {
   const out = [];
   for (const l of state.loans) {
     if (l.status !== 'normal') continue;
-    // 統一規則：第一個真正收息日 = 借款日當天起算（期初先收制；預收涵蓋期自動跳過）
-    // 與首頁月曆、月報、行事曆、雲端提醒同一套
-    let d = nextCollectDue(l, parseDate(l.startDate));
-    let guard = 0;
-    const misses = [];
-    while (d < now && guard++ < 36) {
-      if (!settledInMonth(state.payments, l, d.getFullYear(), d.getMonth())) misses.push(new Date(d));
-      d = dueDateFor(d.getFullYear(), d.getMonth() + 1, l.dueDay);
-    }
-    if (misses.length) {
-      out.push({ loan: l, first: misses[0], count: misses.length, amount: misses.length * monthlyInterest(l) });
+    const periods = missedPeriods(state, l, now);
+    if (periods.length) {
+      out.push({
+        loan: l, first: periods[0].date, count: periods.length,
+        amount: periods.reduce((s, p) => s + p.remaining, 0),
+      });
     }
   }
   return out.sort((a, b) => a.first - b.first);
