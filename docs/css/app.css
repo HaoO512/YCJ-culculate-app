@@ -299,12 +299,12 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .picon.done { background: #EFEBE4; } .picon.done svg { stroke: var(--sub); }
 .prow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .prow .nm { font-size: 21px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prow .stt { font-size: 16px; font-weight: 600; color: var(--sub); }
+.prow .stt { font-size: 17px; font-weight: 600; color: var(--sub); }
 .prow .stt.g { color: var(--green); }
 .prow .stt.r { color: var(--red); }
 .prow .right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .prow .right .amt { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.prow .right .sub { font-size: 16px; font-weight: 600; color: var(--sub); }
+.prow .right .sub { font-size: 17px; font-weight: 600; color: var(--sub); }
 
 /* 設定列 */
 .srow {
@@ -318,7 +318,7 @@ button.srow { border: 1px solid var(--line); border-radius: 18px; background: va
 }
 .srow .lbl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .srow .lbl .t { font-size: 20px; font-weight: 700; }
-.srow .lbl .s { font-size: 16px; font-weight: 600; color: var(--sub); }
+.srow .lbl .s { font-size: 17px; font-weight: 600; color: var(--sub); }
 .srow .val { font-size: 18px; font-weight: 700; color: var(--sub); white-space: nowrap; }
 details.acc summary.srow-sum { padding: 10px 14px; gap: 12px; display: flex; align-items: center; font-size: inherit; }
 details.acc summary.srow-sum::after { content: '›'; color: var(--sub); font-size: 24px; }
@@ -402,3 +402,4 @@ textarea:focus-visible, summary:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }
 }
+.sic svg { width: 24px; height: 24px; stroke: var(--sub); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

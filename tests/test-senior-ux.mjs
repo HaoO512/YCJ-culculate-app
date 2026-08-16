@@ -122,3 +122,14 @@ assert.ok(js.includes("route.view === 'settings' ? 'none'"), '設定頁隱藏底
 assert.ok(js.includes('立即傳送一則測試'), '測試通知改設定列雙行文案');
 
 console.log('適老化與防誤觸規格全過');
+
+// ── v40：墓碑清單、名單小字17、SVG 圖示 ──
+{
+  assert.ok(js.includes('state.tombstones'), '刪帳留墓碑供停止檔用');
+  assert.ok(/downloadStopAllICS\(all\)/.test(js) && js.includes('...(state.tombstones || [])'), '停止檔含已刪帳');
+  assert.ok(js.includes('請到行事曆手動刪除'), '更早刪帳的限制有告知');
+  assert.ok(css.includes('.prow .stt { font-size: 17px'), '狀態文字 17px');
+  assert.ok(css.includes('.prow .right .sub { font-size: 17px'), '每月利息標籤 17px');
+  assert.ok(js.includes('const SIC = {') && !/[☀-➿\u{1F300}-\u{1FAFF}]/u.test(js.match(/const SIC[\s\S]*?};/)[0].replace(/[^ -~一-鿿]/gu, s => s)), 'SVG 圖示集存在');
+  assert.ok(js.includes('${SIC.cloud}') && js.includes('${SIC.box}'), '設定頁改用 SVG 圖示');
+}

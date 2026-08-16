@@ -857,32 +857,32 @@ function viewSettings() {
 
     <p class="section-h">通知與同步</p>
     <div class="card plist">
-      <div class="srow"><span class="sic">☁️</span>
+      <div class="srow"><span class="sic">${SIC.cloud}</span>
         <span class="lbl"><span class="t">資料同步</span></span>
         <span class="val">${syncShort}</span></div>
-      <div class="srow"><span class="sic">🔔</span>
+      <div class="srow"><span class="sic">${SIC.bell}</span>
         <span class="lbl"><span class="t">通知提醒</span></span>
         <span class="val">${m.pushOn ? '已開啟' : '未開啟'}</span></div>
     </div>
     ${m.lastError ? `<p class="hint" style="color:var(--red);font-size:17px;margin:0 2px">同步被拒：${esc(m.lastError)}（資料仍在手機）</p>` : ''}
     <button class="btn accent mid" data-action="cloud-sync-now">↻ 立即同步</button>
     ${m.pushOn
-      ? `<button class="card srow" data-action="cloud-push-test"><span class="sic">🔔</span>
+      ? `<button class="card srow" data-action="cloud-push-test"><span class="sic">${SIC.bell}</span>
           <span class="lbl"><span class="t">測試通知</span><span class="s">立即傳送一則測試</span></span>
           <span class="chev">›</span></button>`
-      : `<button class="card srow" data-action="cloud-push-enable"><span class="sic">🔔</span>
+      : `<button class="card srow" data-action="cloud-push-enable"><span class="sic">${SIC.bell}</span>
           <span class="lbl"><span class="t">開啟通知提醒</span><span class="s">收息前一天與當天 09:30 自動通知</span></span>
           <span class="chev">›</span></button>`}
 
     <p class="section-h">其他設定</p>
-    <details class="acc"><summary class="srow-sum"><span class="sic">📅</span>
+    <details class="acc"><summary class="srow-sum"><span class="sic">${SIC.cal}</span>
       <span class="lbl"><span class="t">行事曆（選用）</span><span class="s">只有手動按下才會下載</span></span></summary>
       <div class="acc-body">
         <button class="btn outline-grey mid" data-action="ics-all">下載全部行事曆提醒</button>
         <button class="btn outline-grey mid" data-action="ics-stop-all">停止所有舊行事曆提醒</button>
-        <p class="hint" style="color:var(--sub);font-size:17px;margin:0">如果以前加過行事曆提醒，下載停止檔加入一次即可全部清掉。</p>
+        <p class="hint" style="color:var(--sub);font-size:17px;margin:0">停止檔涵蓋帳內與後來刪掉的帳；更早以前刪掉的舊帳，請到行事曆手動刪除。</p>
       </div></details>
-    <details class="acc"><summary class="srow-sum"><span class="sic">🔑</span>
+    <details class="acc"><summary class="srow-sum"><span class="sic">${SIC.key}</span>
       <span class="lbl"><span class="t">同步金鑰</span><span class="s">換手機、第二台裝置用</span></span></summary>
       <div class="acc-body">
         <p class="hint" style="color:var(--sub);font-size:17px;margin:0">金鑰＝資料的鑰匙，抄下收好。</p>
@@ -891,7 +891,7 @@ function viewSettings() {
           <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
         </div>
       </div></details>
-    <details class="acc"><summary class="srow-sum"><span class="sic">📦</span>
+    <details class="acc"><summary class="srow-sum"><span class="sic">${SIC.box}</span>
       <span class="lbl"><span class="t">備份與匯入</span><span class="s">${backupTxt}</span></span></summary>
       <div class="acc-body">
         <button class="btn outline-grey mid" data-action="export-xlsx">匯出 Excel 檔</button>
@@ -918,6 +918,15 @@ const ICONS = {
   chart: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>',
+};
+
+// 設定頁單色線條圖示（不用 Emoji：跨機型外觀一致）
+const SIC = {
+  cloud: '<svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .9-7.9A5.5 5.5 0 0 0 7.1 9.2 4.5 4.5 0 0 0 7 18z"/></svg>',
+  bell: '<svg viewBox="0 0 24 24"><path d="M12 3.5a5 5 0 0 0-5 5v3.3L5.2 15h13.6L17 11.8V8.5a5 5 0 0 0-5-5z"/><path d="M10 18a2 2 0 0 0 4 0"/></svg>',
+  cal: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 3.5V8M16 3.5V8M4 11h16"/></svg>',
+  key: '<svg viewBox="0 0 24 24"><circle cx="8.5" cy="15.5" r="3.8"/><path d="M11.3 12.7 20 4M15.5 8.5l3 3M18.2 5.8l2 2"/></svg>',
+  box: '<svg viewBox="0 0 24 24"><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/></svg>',
 };
 
 // 設定圖示要不要亮紅點（同步出狀況或太久沒備份）
@@ -1266,6 +1275,10 @@ const actions = {
       ok: '刪除錯帳', danger: true,
     });
     if (!ok) return;
+    // 墓碑清單：留下 UID 需要的最小資訊，讓「停止所有提醒」能停到已刪的帳
+    state.tombstones = state.tombstones || [];
+    state.tombstones.push({ id: l.id, name: l.name, dueDay: l.dueDay, startDate: l.startDate });
+    if (state.tombstones.length > 100) state.tombstones.shift();
     state.loans = state.loans.filter(x => x.id !== l.id);
     state.payments = state.payments.filter(p => p.loanId !== l.id);
     save(state); go('people');
@@ -1323,8 +1336,10 @@ const actions = {
     downloadICS(normals, '收息提醒-全部.ics');
   },
   'ics-stop-all'() {
-    if (!state.loans.length) { alert('沒有借款資料'); return; }
-    downloadStopAllICS(state.loans);
+    // 含墓碑清單：已刪的帳也產生相同 UID 的停止事件
+    const all = [...state.loans, ...(state.tombstones || [])];
+    if (!all.length) { alert('沒有借款資料'); return; }
+    downloadStopAllICS(all);
   },
   'export-xlsx'() {
     exportXlsx(state);
