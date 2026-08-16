@@ -287,24 +287,28 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 /* 名單容器：一張卡＋分隔線，取代逐筆大卡 */
 .plist { padding: 0; overflow: hidden; }
 .prow {
-  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 88px;
-  padding: 12px 16px; border: 0; background: none; font-family: inherit;
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 96px;
+  padding: 14px 16px; border: 0; background: none; font-family: inherit;
   font-size: inherit; color: inherit; text-align: left;
 }
 .prow + .prow, .plist .srow + .srow { border-top: 1px solid var(--line); }
-.picon { width: 44px; height: 44px; border-radius: 999px; display: grid; place-items: center; flex: none; }
+.picon { width: 44px; height: 44px; border-radius: 999px; display: grid; place-items: center; flex: none; margin-top: 2px; }
 .picon svg { width: 22px; height: 22px; fill: none; stroke-width: 2.6; }
 .picon.ok { background: var(--green-bg); } .picon.ok svg { stroke: var(--green); }
 .picon.bad { background: var(--red-bg); } .picon.bad svg { stroke: var(--red); }
 .picon.done { background: #EFEBE4; } .picon.done svg { stroke: var(--sub); }
-.prow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.prow .nm { font-size: 21px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+/* 姓名獨占第一行：可自然換行、列高自動撐開，不截字不省略 */
+.prow .nm { font-size: 21px; font-weight: 700; white-space: normal; overflow: visible;
+  text-overflow: clip; overflow-wrap: anywhere; line-height: 1.25; }
+.prow .lower { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 10px; }
 .prow .stt { font-size: 17px; font-weight: 600; color: var(--sub); }
 .prow .stt.g { color: var(--green); }
 .prow .stt.r { color: var(--red); }
-.prow .right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.prow .right { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .prow .right .amt { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .prow .right .sub { font-size: 17px; font-weight: 600; color: var(--sub); }
+.prow .chev { margin-top: 6px; }
 
 /* 設定列 */
 .srow {

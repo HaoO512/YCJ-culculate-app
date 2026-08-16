@@ -285,9 +285,11 @@ function viewPeople() {
         ${icon(l)}
         <span class="mid">
           <span class="nm">${esc(l.name)}</span>
-          <span class="stt ${l.status === 'normal' ? 'g' : isProblem(l) ? 'r' : ''}">${STATUS_TXT[l.status]}</span>
+          <span class="lower">
+            <span class="stt ${l.status === 'normal' ? 'g' : isProblem(l) ? 'r' : ''}">${STATUS_TXT[l.status]}</span>
+            <span class="right">${right}</span>
+          </span>
         </span>
-        <span class="right">${right}</span>
         <span class="chev">›</span>
       </button>`;
   };

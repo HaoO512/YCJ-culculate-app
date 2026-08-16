@@ -133,3 +133,14 @@ console.log('適老化與防誤觸規格全過');
   assert.ok(js.includes('const SIC = {') && !/[☀-➿\u{1F300}-\u{1FAFF}]/u.test(js.match(/const SIC[\s\S]*?};/)[0].replace(/[^ -~一-鿿]/gu, s => s)), 'SVG 圖示集存在');
   assert.ok(js.includes('${SIC.cloud}') && js.includes('${SIC.box}'), '設定頁改用 SVG 圖示');
 }
+
+// ── v42：姓名完整顯示（兩層排列，不截字）──
+{
+  const nm = css.match(/\.prow \.nm \{[\s\S]*?\}/)[0];
+  assert.ok(nm.includes('white-space: normal') && nm.includes('overflow-wrap: anywhere'), '姓名可自然換行');
+  assert.ok(!nm.includes('ellipsis') && !nm.includes('nowrap'), '姓名不得省略截斷');
+  assert.ok(nm.includes('font-size: 21px; font-weight: 700'), '姓名字級不縮');
+  assert.ok(css.includes('.prow .lower { display: flex; flex-wrap: wrap'), '狀態與金額移到第二層');
+  assert.ok(/\.prow \{[\s\S]{0,160}min-height: 96px/.test(css), '列高 min-height 96、可撐高');
+  assert.ok(js.includes('<span class="lower">'), '名單列採兩層結構');
+}

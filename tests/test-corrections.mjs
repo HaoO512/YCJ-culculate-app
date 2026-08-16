@@ -113,6 +113,15 @@ const mk = () => ({
   m = mergeTombstones(many.slice(0, 60), many.slice(60), new Set());
   assert.equal(m.length, 100);
   assert.equal(m[99].id, 't119', '超過 100 丟最舊、留最新');
+  // 交叉案例：現有 100 筆＋匯入「更新最舊的 c0」＋50 筆新增 → 被更新的 c0 必須存活
+  const cur100 = Array.from({ length: 100 }, (_, i) => T('c' + i));
+  const imp = [T('c0', 'c0更新'), ...Array.from({ length: 50 }, (_, i) => T('n' + i))];
+  m = mergeTombstones(cur100, imp, new Set());
+  assert.equal(m.length, 100);
+  const c0 = m.find(t => t.id === 'c0');
+  assert.ok(c0, '超限裁切時，匯入更新過的舊 ID 仍保留');
+  assert.equal(c0.name, 'c0更新', '內容以匯入為準');
+  assert.ok(!m.find(t => t.id === 'c1'), '未被更新的最舊資料先被裁掉');
 }
 
 console.log('更正/結清/刪除流程全過');

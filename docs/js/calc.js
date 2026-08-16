@@ -282,9 +282,15 @@ export function monthlySeries(payments, now, n) {
 }
 
 // 墓碑合併：依 ID 去重（匯入的較新、覆蓋現有）、剔除已復活為借款的 ID、保留最新 100 筆
+// 注意：Map.set 更新既有 key 不會改變插入順序，必須先 delete 再 set，
+// 匯入的資料才會排到最後、在 slice(-100) 超限裁切時被視為最新保留
 export function mergeTombstones(current, imported, liveIds) {
   const map = new Map();
-  for (const t of [...(current || []), ...(imported || [])]) map.set(t.id, t);
+  for (const t of current || []) map.set(t.id, t);
+  for (const t of imported || []) {
+    map.delete(t.id);
+    map.set(t.id, t);
+  }
   return [...map.values()].filter(t => !liveIds.has(t.id)).slice(-100);
 }
 
