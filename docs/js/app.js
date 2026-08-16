@@ -2,7 +2,7 @@
 import { load, save, newId } from './store.js';
 import {
   parseDate, fmtDate, today, monthlyInterest, defaultReferral, DEFAULT_APPRAISAL,
-  dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth,
+  dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth, monthPaidAmount,
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
   upcomingDues, missedDues,
@@ -312,6 +312,7 @@ function viewDetail() {
       </div>`;
     more = `
         ${l.closedDate ? '' : `<button class="btn accent" data-action="fill-closed" data-id="${l.id}">補填結清日</button>`}
+        <button class="btn outline-red" data-action="reopen" data-id="${l.id}">撤銷結清（誤按時用）</button>
         <button class="btn outline-grey" data-action="ics-stop" data-id="${l.id}">停止行事曆提醒</button>
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">編輯這筆借款</button>`;
   }
@@ -478,10 +479,51 @@ function saveForm(id) {
 
   if (id) {
     const l = loanById(id);
+    const coreChanged = l.principal !== principal || l.rate !== rate ||
+      l.startDate !== startDate || l.dueDay !== dueDay || (l.prepaidMonths || 0) !== prepaidMonths;
+    // 已結清／結案：金額與日期鎖定，避免與歷史結案金額矛盾
+    if (l.status === 'closed' && coreChanged) {
+      alert('已結清的帳只能改姓名、介紹費、代書費、備註。\n金額或日期真的錯了，先在「更多操作」按「撤銷結清」再改。');
+      return;
+    }
+    // 日期關係：存進去才發現壞掉會整份進救援流程，這裡先擋
+    if (l.overdueSince && l.overdueSince < startDate) {
+      alert(`停繳日（${l.overdueSince}）會早於新的借款日，日期矛盾。\n先「恢復正常」清掉欠繳狀態再改借款日。`);
+      return;
+    }
+    if (l.closedDate && l.closedDate < startDate) {
+      alert(`結清日（${l.closedDate}）會早於新的借款日，日期矛盾。`);
+      return;
+    }
+    const oldMi = monthlyInterest(l);
+    const oldPm = l.prepaidMonths || 0;
+    const oldStart = l.startDate;
     const remindChanged = l.status === 'normal' &&
       (l.dueDay !== dueDay || l.principal !== principal || l.rate !== rate ||
        l.name !== name || l.startDate !== startDate || (l.prepaidMonths || 0) !== prepaidMonths);
     Object.assign(l, { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, appraisalFee, note });
+
+    // 簽約預收款跟著改，不留舊金額舊日期的錯帳
+    const newMi = Math.round(principal * rate / 100);
+    const pp = oldPm > 0 ? state.payments.find(p => p.loanId === l.id &&
+      (p.kind === 'prepaid' || (!p.dueDate && p.date === oldStart && p.amount === oldMi * oldPm))) : null;
+    if (pp) {
+      if (prepaidMonths > 0) {
+        if (pp.amount !== newMi * prepaidMonths || pp.date !== startDate) {
+          pp.amount = newMi * prepaidMonths;
+          pp.date = startDate;
+          pp.kind = 'prepaid';
+          setTimeout(() => alert(`簽約預收款已同步改為 ${money(newMi * prepaidMonths)}（${startDate}）。`), 600);
+        }
+      } else {
+        state.payments = state.payments.filter(p => p !== pp);
+        setTimeout(() => alert('預收改為 0，原本的簽約預收款已一併刪除。'), 600);
+      }
+    } else if (oldPm === 0 && prepaidMonths > 0 &&
+        confirm(`預收從 0 改成 ${prepaidMonths} 個月：要補記一筆簽約預收款 ${money(newMi * prepaidMonths)}（日期＝借款日）嗎？`)) {
+      state.payments.push({ id: newId(), loanId: l.id, date: startDate, amount: newMi * prepaidMonths, kind: 'prepaid' });
+    }
+
     save(state); go('detail', { id });
     if (remindChanged) {
       setTimeout(() => {
@@ -499,7 +541,7 @@ function saveForm(id) {
     // 預收利息：簽約當天記一筆收款
     const mi = Math.round(principal * rate / 100);
     if (prepaidMonths > 0) {
-      state.payments.push({ id: newId(), loanId: loan.id, date: startDate, amount: mi * prepaidMonths });
+      state.payments.push({ id: newId(), loanId: loan.id, date: startDate, amount: mi * prepaidMonths, kind: 'prepaid' });
     }
     navFrom.detail = navFrom.form;   // 新增表單進詳情：返回要回到開表單前的分頁
     save(state); go('detail', { id: loan.id });
@@ -829,12 +871,19 @@ const actions = {
   receive(el) {
     const l = loanById(el.dataset.id);
     const mi = monthlyInterest(l);
-    if (!confirm(`記一筆：今天收到 ${l.name} 利息 ${money(mi)}？`)) return;
     const now0 = today();
+    // 本月已有部分款：只補剩餘，不重複累計
+    const paidSoFar = monthPaidAmount(state.payments, l.id, now0.getFullYear(), now0.getMonth());
+    const remaining = Math.max(0, mi - paidSoFar);
+    if (remaining <= 0) { render(); return; }
+    const msg = paidSoFar > 0
+      ? `本月已記 ${money(paidSoFar)}，補記剩餘 ${money(remaining)}？`
+      : `記一筆：今天收到 ${l.name} 利息 ${money(mi)}？`;
+    if (!confirm(msg)) return;
     state.payments.push({
       id: newId(), loanId: l.id, date: fmtDate(now0),
       dueDate: fmtDate(dueDateFor(now0.getFullYear(), now0.getMonth(), l.dueDay)),
-      amount: mi,
+      amount: remaining,
     });
     commit();
   },
@@ -860,7 +909,14 @@ const actions = {
   'del-payment'(el) {
     const p = state.payments.find(x => x.id === el.dataset.id);
     if (!p) return;
-    if (!confirm(`刪掉這筆收款記錄（${p.date} ${money(p.amount)}）？`)) return;
+    const l = loanById(p.loanId);
+    const isPrepaid = l && (p.kind === 'prepaid' ||
+      (!p.dueDate && (l.prepaidMonths || 0) > 0 && p.date === l.startDate &&
+       p.amount === monthlyInterest(l) * l.prepaidMonths));
+    if (isPrepaid) {
+      if (!confirm(`這是「${l.name}」的簽約預收款。\n刪除會把預收月數歸零，提醒從下一個收息日開始。確定？`)) return;
+      l.prepaidMonths = 0;
+    } else if (!confirm(`刪掉這筆收款記錄（${p.date} ${money(p.amount)}）？`)) return;
     state.payments = state.payments.filter(x => x.id !== p.id);
     commit();
   },
@@ -966,6 +1022,18 @@ const actions = {
     setTimeout(() => alert('已刪除。\n「停止提醒」檔已下載：點開按「加入」，行事曆的提醒才會跟著停。'), 300);
   },
 
+  'reopen'(el) {
+    const l = loanById(el.dataset.id);
+    const extra = l.finalReceived != null || l.writeoff ? '\n（結案實收與壞帳沖銷記錄會一併清除）' : '';
+    if (!confirm(`撤銷結清，「${l.name}」回到正常收息？${extra}`)) return;
+    l.status = 'normal';
+    l.closedDate = null;
+    l.finalReceived = null;
+    l.writeoff = null;
+    commit();
+    downloadICS([l], `收息提醒-${l.name}.ics`);
+    setTimeout(() => alert('已撤銷結清，回到正常收息。\n行事曆檔已下載：點開按「加入」，提醒接回來。'), 300);
+  },
   'fill-closed'(el) {
     const l = loanById(el.dataset.id);
     // 預設帶最近一次收款日僅供參考，避免順手按掉「今天」把舊月報多算好幾個月

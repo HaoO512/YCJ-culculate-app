@@ -86,10 +86,10 @@ function prepaidUntilYMD(loan) {
 function monthlyInterest(loan) { return Math.round(loan.principal * loan.rate / 100); }
 
 function settled(state, loan, y, m) {
-  // 該月收款合計 ≥ 月息才算收齊（與 App 端 settledInMonth 同規則）
+  // 該月「歸屬」收款合計 ≥ 月息才算收齊（歸屬期優先，與 App 端 monthPaidAmount 同規則）
   const sum = (state.payments || []).reduce((s, p) => {
     if (p.loanId !== loan.id) return s;
-    const [py, pm] = parseYMD(p.date);
+    const [py, pm] = parseYMD(p.dueDate || p.date);
     return py === y && pm === m ? s + p.amount : s;
   }, 0);
   if (sum >= monthlyInterest(loan)) return true;

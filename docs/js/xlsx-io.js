@@ -95,6 +95,9 @@ export function parseXlsx(arrayBuffer) {
       errors.push(`${rowNo}：欠繳／法院狀態要填停繳日`);
     const closedDate = r['結清日'] ? normDate(r['結清日']) : null;
     if (r['結清日'] && !closedDate) errors.push(`${rowNo}：結清日格式錯`);
+    // 日期關係與本機/雲端同一套，匯入成功但同步被拒的情況不該存在
+    if (startDate && overdueSince && overdueSince < startDate) errors.push(`${rowNo}：停繳日早於借款日`);
+    if (startDate && closedDate && closedDate < startDate) errors.push(`${rowNo}：結清日早於借款日`);
 
     const prepaidMonths = Number(r['預收月數'] || 0);
     if (!(Number.isInteger(prepaidMonths) && prepaidMonths >= 0 && prepaidMonths <= 12)) errors.push(`${rowNo}：預收月數要 0–12 的整數`);
