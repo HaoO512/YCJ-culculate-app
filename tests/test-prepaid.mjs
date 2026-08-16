@@ -27,6 +27,19 @@ assert.equal(prepaidUntil(N), null);
 assert.equal(fmtDate(nextCollectDue(N, parseDate('2026-08-05'))), '2026-09-04');
 assert.equal(settledInMonth([], N, 2026, 8), false);
 
+// 簽約日在收息日之後：8/16 簽、每月 14 收、預收 3 → 涵蓋 8/16 當期、9/14、10/14 → 下次 11/14
+const G = { ...L, startDate: '2026-08-16', dueDay: 14, prepaidMonths: 3 };
+assert.equal(fmtDate(prepaidUntil(G)), '2026-10-14');
+assert.equal(fmtDate(nextCollectDue(G, parseDate('2026-08-16'))), '2026-11-14');
+assert.equal(settledInMonth([], G, 2026, 8), true,  '9月被預收涵蓋');
+assert.equal(settledInMonth([], G, 2026, 9), true,  '10月被預收涵蓋');
+assert.equal(settledInMonth([], G, 2026, 10), false, '11月要收');
+
+// 預收 1 期＝只涵蓋簽約當期
+const H = { ...L, startDate: '2026-08-16', dueDay: 14, prepaidMonths: 1 };
+assert.equal(fmtDate(prepaidUntil(H)), '2026-08-16');
+assert.equal(fmtDate(nextCollectDue(H, parseDate('2026-08-16'))), '2026-09-14');
+
 // 月底收息 + 預收 2 個月：8/31 簽（當天就是第 1 期）→ 涵蓋 8/31、9/30 → 真收 10/31
 const E = { ...L, startDate: '2026-08-31', dueDay: 'EOM', prepaidMonths: 2 };
 assert.equal(fmtDate(firstDueAfterStart(E)), '2026-09-30');

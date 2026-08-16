@@ -72,14 +72,15 @@ function firstDueAfter(loan, [y, m, d]) {
   return cur;
 }
 
-// 期初先收制：簽約日當期算第 1 期
+// 期初先收制：簽約日當期＝第 1 期，之後每個「嚴格晚於簽約日」的收息日各算一期（與 App 同規則）
 function prepaidUntilYMD(loan) {
   const n = loan.prepaidMonths || 0;
   if (n <= 0) return null;
-  const s = parseYMD(loan.startDate);
-  let cur = [s[0], s[1], dueDayOf(s[0], s[1], loan.dueDay)];
-  if (cmpYMD(cur, s) < 0) cur = addMonth(cur, loan.dueDay);
-  for (let i = 1; i < n; i++) cur = addMonth(cur, loan.dueDay);
+  let cur = parseYMD(loan.startDate);
+  for (let i = 1; i < n; i++) {
+    const cand = [cur[0], cur[1], dueDayOf(cur[0], cur[1], loan.dueDay)];
+    cur = cmpYMD(cand, cur) > 0 ? cand : addMonth(cur, loan.dueDay);
+  }
   return cur;
 }
 

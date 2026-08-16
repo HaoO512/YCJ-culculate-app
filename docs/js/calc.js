@@ -77,14 +77,17 @@ export function firstDueAfterStart(loan) {
 }
 
 // 預收利息涵蓋到的最後一個收息日；沒預收回傳 null
-// 期初先收制：簽約日當期就算第 1 期（8/6 簽收 3 個月 = 涵蓋 8/6、9/6、10/6，下次 11/6 收）
+// 期初先收制：簽約日當期＝第 1 期，之後每個「嚴格晚於簽約日」的收息日各算一期
+// 例：8/16 簽、每月 14 收、預收 3 → 涵蓋 8/16 當期、9/14、10/14，下次 11/14
+//     8/6 簽、每月 6 收、預收 3  → 涵蓋 8/6、9/6、10/6，下次 11/6
 export function prepaidUntil(loan) {
   const n = loan.prepaidMonths || 0;
   if (n <= 0) return null;
-  const s = parseDate(loan.startDate);
-  let d = dueDateFor(s.getFullYear(), s.getMonth(), loan.dueDay);
-  if (d < s) d = dueDateFor(s.getFullYear(), s.getMonth() + 1, loan.dueDay);
-  for (let i = 1; i < n; i++) d = dueDateFor(d.getFullYear(), d.getMonth() + 1, loan.dueDay);
+  let d = parseDate(loan.startDate);
+  for (let i = 1; i < n; i++) {
+    const cand = dueDateFor(d.getFullYear(), d.getMonth(), loan.dueDay);
+    d = cand > d ? cand : dueDateFor(d.getFullYear(), d.getMonth() + 1, loan.dueDay);
+  }
   return d;
 }
 

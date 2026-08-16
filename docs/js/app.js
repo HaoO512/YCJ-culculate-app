@@ -519,9 +519,14 @@ function saveForm(id) {
         state.payments = state.payments.filter(p => p !== pp);
         setTimeout(() => alert('預收改為 0，原本的簽約預收款已一併刪除。'), 600);
       }
-    } else if (oldPm === 0 && prepaidMonths > 0 &&
-        confirm(`預收從 0 改成 ${prepaidMonths} 個月：要補記一筆簽約預收款 ${money(newMi * prepaidMonths)}（日期＝借款日）嗎？`)) {
-      state.payments.push({ id: newId(), loanId: l.id, date: startDate, amount: newMi * prepaidMonths, kind: 'prepaid' });
+    } else if (oldPm === 0 && prepaidMonths > 0) {
+      if (confirm(`預收從 0 改成 ${prepaidMonths} 個月：要補記一筆簽約預收款 ${money(newMi * prepaidMonths)}（日期＝借款日）嗎？`)) {
+        state.payments.push({ id: newId(), loanId: l.id, date: startDate, amount: newMi * prepaidMonths, kind: 'prepaid' });
+      } else {
+        // 沒有收款就不能算已收：取消補記 = 預收維持 0
+        l.prepaidMonths = 0;
+        setTimeout(() => alert('未補記預收款，預收月數維持 0（提醒照常從下個收息日開始）。'), 600);
+      }
     }
 
     save(state); go('detail', { id });
@@ -1030,6 +1035,7 @@ const actions = {
     l.closedDate = null;
     l.finalReceived = null;
     l.writeoff = null;
+    l.overdueSince = null;   // 法院案撤銷不留舊停繳日，避免殘留隱藏日期
     commit();
     downloadICS([l], `收息提醒-${l.name}.ics`);
     setTimeout(() => alert('已撤銷結清，回到正常收息。\n行事曆檔已下載：點開按「加入」，提醒接回來。'), 300);
