@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   parseDate, fmtDate, missedPeriods, missedDues, monthReport,
-  settledInMonth, upcomingDues,
+  settledInMonth, upcomingDues, mergeTombstones,
 } from '../docs/js/calc.js';
 
 const now = parseDate('2026-08-16');
@@ -93,6 +93,26 @@ const mk = () => ({
   assert.equal(k(26000), 2, '26000 → 2 個月');
   assert.equal(k(26500), 2, '不足整期無條件捨去');
   assert.equal(k(5000), 0, '不足一期 → 0');
+}
+
+// ── 墓碑合併：匯入不清空、依 ID 去重、復活剔除、上限 100 ──
+{
+  const T = (id, name = id) => ({ id, name, dueDay: 5, startDate: '2025-01-05' });
+  // 匯入檔沒有墓碑 → 現有的不能被洗掉
+  let m = mergeTombstones([T('a'), T('b')], undefined, new Set());
+  assert.equal(m.length, 2, '整批取代仍保留現有墓碑');
+  // 依 ID 去重：匯入的覆蓋現有
+  m = mergeTombstones([T('a', '舊名')], [T('a', '新名')], new Set());
+  assert.equal(m.length, 1);
+  assert.equal(m[0].name, '新名', '同 ID 以匯入為準');
+  // 匯入檔把該 ID 復活成借款 → 墓碑剔除
+  m = mergeTombstones([T('a'), T('b')], [], new Set(['a']));
+  assert.deepEqual(m.map(t => t.id), ['b'], '復活的帳不再列入停止檔');
+  // 上限 100：保留最新
+  const many = Array.from({ length: 120 }, (_, i) => T('t' + i));
+  m = mergeTombstones(many.slice(0, 60), many.slice(60), new Set());
+  assert.equal(m.length, 100);
+  assert.equal(m[99].id, 't119', '超過 100 丟最舊、留最新');
 }
 
 console.log('更正/結清/刪除流程全過');

@@ -5,7 +5,7 @@ import {
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth, monthPaidAmount,
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
-  upcomingDues, missedDues, missedPeriods,
+  upcomingDues, missedDues, missedPeriods, mergeTombstones,
 } from './calc.js';
 import { downloadICS, downloadStopAllICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
@@ -1276,9 +1276,11 @@ const actions = {
     });
     if (!ok) return;
     // 墓碑清單：留下 UID 需要的最小資訊，讓「停止所有提醒」能停到已刪的帳
-    state.tombstones = state.tombstones || [];
-    state.tombstones.push({ id: l.id, name: l.name, dueDay: l.dueDay, startDate: l.startDate });
-    if (state.tombstones.length > 100) state.tombstones.shift();
+    // 依 ID 去重後保留最新 100 筆（與本機/雲端/Excel 驗證一致）
+    state.tombstones = [
+      ...(state.tombstones || []).filter(t => t.id !== l.id),
+      { id: l.id, name: l.name, dueDay: l.dueDay, startDate: l.startDate },
+    ].slice(-100);
     state.loans = state.loans.filter(x => x.id !== l.id);
     state.payments = state.payments.filter(p => p.loanId !== l.id);
     save(state); go('people');
@@ -1490,6 +1492,10 @@ async function doImport(f) {
   });
   if (!ok) return;
   result.state.lastExport = state.lastExport;
+  // 墓碑不能被整批取代洗掉：現有＋檔內合併、去重、剔除已復活的 ID、留最新 100
+  const liveIds = new Set(result.state.loans.map(l => l.id));
+  const merged = mergeTombstones(state.tombstones, result.state.tombstones, liveIds);
+  if (merged.length) result.state.tombstones = merged; else delete result.state.tombstones;
   state = result.state;
   save(state); go('home');
 }

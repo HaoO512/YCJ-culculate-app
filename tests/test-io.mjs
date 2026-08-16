@@ -42,6 +42,10 @@ const state = {
   payments: [
     { id: 'p1', loanId: 'abc123', date: '2026-07-05', amount: 10000 },
   ],
+  tombstones: [
+    { id: 'dead1', name: '已刪甲', dueDay: 7, startDate: '2025-06-07' },
+    { id: 'dead2', name: '已刪乙', dueDay: 'EOM', startDate: '2025-09-30' },
+  ],
   lastExport: null,
 };
 exportXlsx(state);
@@ -63,6 +67,14 @@ assert.equal(l1.status, 'overdue');
 assert.equal(l1.overdueSince, '2026-05-10');
 assert.equal(l1.note, '已提告');
 assert.equal(r.state.payments[0].amount, 10000);
+
+// 墓碑 Excel 往返：系統資料表保存、匯入還原
+assert.equal((r.state.tombstones || []).length, 2, '墓碑往返不遺失');
+const t1 = r.state.tombstones.find(t => t.id === 'dead1');
+assert.equal(t1.name, '已刪甲');
+assert.equal(t1.dueDay, 7);
+assert.equal(t1.startDate, '2025-06-07');
+assert.equal(r.state.tombstones.find(t => t.id === 'dead2').dueDay, 'EOM');
 
 // 錯誤資料要被擋下
 const wb = XLSX.utils.book_new();

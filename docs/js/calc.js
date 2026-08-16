@@ -281,6 +281,13 @@ export function monthlySeries(payments, now, n) {
   return out;
 }
 
+// 墓碑合併：依 ID 去重（匯入的較新、覆蓋現有）、剔除已復活為借款的 ID、保留最新 100 筆
+export function mergeTombstones(current, imported, liveIds) {
+  const map = new Map();
+  for (const t of [...(current || []), ...(imported || [])]) map.set(t.id, t);
+  return [...map.values()].filter(t => !liveIds.has(t.id)).slice(-100);
+}
+
 export function money(n) {
   return '$' + Math.round(n).toLocaleString('en-US');
 }

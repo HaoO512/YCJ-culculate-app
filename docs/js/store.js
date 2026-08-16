@@ -32,11 +32,13 @@ export function load() {
       if (!moneyOk(l.referralFee) || !moneyOk(l.appraisalFee) || !moneyOk(l.finalReceived) || !moneyOk(l.writeoff)) throw new Error('bad fee');
     }
     if (s.tombstones != null) {
-      if (!Array.isArray(s.tombstones)) throw new Error('bad tombstones');
+      if (!Array.isArray(s.tombstones) || s.tombstones.length > 100) throw new Error('bad tombstones');
+      const tIds = new Set();
       for (const t of s.tombstones) {
-        if (typeof t.id !== 'string' || !t.id || typeof t.name !== 'string' ||
+        if (typeof t.id !== 'string' || !t.id || tIds.has(t.id) || typeof t.name !== 'string' ||
             !(t.dueDay === 'EOM' || (Number.isInteger(t.dueDay) && t.dueDay >= 1 && t.dueDay <= 31)) ||
             !dateOk(t.startDate)) throw new Error('bad tombstone');
+        tIds.add(t.id);
       }
     }
     const payIds = new Set();

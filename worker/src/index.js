@@ -232,9 +232,11 @@ function validateState(state) {
   }
   // 墓碑清單（已刪帳的停止提醒用），選填
   if (state.tombstones != null) {
-    if (!Array.isArray(state.tombstones) || state.tombstones.length > 200) return '刪帳清單異常';
+    if (!Array.isArray(state.tombstones) || state.tombstones.length > 100) return '刪帳清單異常';
+    const tIds = new Set();
     for (const t of state.tombstones) {
-      if (typeof t.id !== 'string' || !t.id) return '刪帳清單編號無效';
+      if (typeof t.id !== 'string' || !t.id || tIds.has(t.id)) return '刪帳清單編號缺失或重複';
+      tIds.add(t.id);
       if (typeof t.name !== 'string') return '刪帳清單姓名無效';
       if (!(t.dueDay === 'EOM' || (Number.isInteger(t.dueDay) && t.dueDay >= 1 && t.dueDay <= 31))) return '刪帳清單收息日無效';
       if (!validDate(t.startDate)) return '刪帳清單日期無效';

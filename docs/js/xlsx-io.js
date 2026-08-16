@@ -53,6 +53,16 @@ export function exportXlsx(state) {
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows), '收款記錄');
 
+  // 技術資料表：保存墓碑（已刪帳的停止提醒資訊），匯入時合併不遺失
+  if (state.tombstones && state.tombstones.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.tombstones.map(t => ({
+      '編號': t.id,
+      '姓名': t.name,
+      '收息日': t.dueDay === 'EOM' ? '月底' : t.dueDay,
+      '借款日期': t.startDate,
+    }))), '系統資料');
+  }
+
   const stamp = fmtDate(now).replace(/-/g, '');
   XLSX.writeFile(wb, `借貸帳本-${stamp}.xlsx`);
 }
@@ -151,8 +161,31 @@ export function parseXlsx(arrayBuffer) {
     });
   }
 
+  // 系統資料表（墓碑）：最多 100、ID 不得重複
+  const tombstones = [];
+  const tsSheet = wb.Sheets['系統資料'];
+  if (tsSheet) {
+    const seenT = new Set();
+    XLSX.utils.sheet_to_json(tsSheet).forEach((r, i) => {
+      const rowNo = `系統資料第 ${i + 2} 列`;
+      const id = String(r['編號'] || '').trim();
+      let dd = r['收息日'];
+      if (dd === '月底' || dd === 'EOM') dd = 'EOM'; else dd = Number(dd);
+      const sd = normDate(r['借款日期']);
+      if (!id || seenT.has(id)) { errors.push(`${rowNo}：編號缺失或重複`); return; }
+      seenT.add(id);
+      if (!(dd === 'EOM' || (Number.isInteger(dd) && dd >= 1 && dd <= 31))) errors.push(`${rowNo}：收息日無效`);
+      if (!sd) errors.push(`${rowNo}：借款日期無效`);
+      tombstones.push({ id, name: String(r['姓名'] || ''), dueDay: dd, startDate: sd });
+    });
+    if (tombstones.length > 100) errors.push('系統資料（已刪帳清單）超過 100 筆');
+  }
+
   if (errors.length) return { ok: false, errors };
-  return { ok: true, errors: [], state: { version: 1, loans, payments, lastExport: null } };
+  return {
+    ok: true, errors: [],
+    state: { version: 1, loans, payments, lastExport: null, ...(tombstones.length ? { tombstones } : {}) },
+  };
 }
 
 // 支援 "YYYY-MM-DD" 字串或 Excel 日期序號
