@@ -77,8 +77,8 @@ const mk = () => ({
   const src = readFileSync(new URL('../docs/js/app.js', import.meta.url), 'utf8');
   assert.ok(!src.includes('請改用「結清還本」'), '不得再出現「不能刪除，請改用結清還本」');
   assert.ok(!src.includes('有收款記錄，不能刪除'), '刪除阻擋已移除');
-  assert.ok(src.includes('刪除誤建資料'), '刪除按鈕改名');
-  assert.ok(src.includes('撤銷法院狀態'), '法院可撤銷回欠繳');
+  assert.ok(src.includes('刪除錯帳'), '刪除按鈕（v34 短文案）');
+  assert.ok(src.includes('退回欠繳'), '法院可撤銷回欠繳（v34 短文案）');
   assert.ok(src.includes("'edit-payment'"), '收款有更正功能');
   assert.ok(src.includes('const dis = locked'), '已結清欄位停用');
   assert.ok(src.includes('要更正請先撤銷結清'), '鎖定說明與撤銷入口');

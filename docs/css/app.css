@@ -3,7 +3,7 @@
   --bg: #FAF5EE;
   --card: #FFFFFF;
   --ink: #241E15;
-  --sub: #756A5B;
+  --sub: #66594A;   /* 說明文字加深，適老對比 */
   --line: #ECDFCD;
   --accent: #D9730D;
   --accent-deep: #A85600;
@@ -17,6 +17,8 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
+/* 防誤觸：主要互動區關掉雙擊縮放手勢，保留正常捲動 */
+button, select, input, textarea, summary, .day, .slim, .tab, .person-row { touch-action: manipulation; }
 body {
   margin: 0;
   background: var(--bg);
@@ -129,9 +131,10 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 
 .btn {
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  width: 100%; min-height: 60px; border-radius: 16px;
-  font-size: 21px; font-weight: 800; border: 0; font-family: inherit;
+  width: 100%; min-height: 68px; border-radius: 16px;
+  font-size: 22px; font-weight: 800; border: 0; font-family: inherit;
 }
+.btn[data-busy] { opacity: 0.6; pointer-events: none; }
 .btn:active { transform: scale(0.97); }
 .btn.green  { background: var(--green);  color: #fff; }
 .btn.accent { background: var(--accent); color: #fff; }
@@ -149,13 +152,32 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .history .amount { font-weight: 800; font-variant-numeric: tabular-nums; margin-left: auto; }
 .history .ok-mark { color: var(--green); font-weight: 800; font-size: 20px; }
 .history .del {
-  border: 0; background: none; color: var(--sub); font-size: 18px; font-family: inherit;
-  padding: 6px 8px;
+  border: 1px solid var(--line); background: var(--bg); border-radius: 10px;
+  color: var(--ink); font-size: 17px; font-weight: 700; font-family: inherit;
+  min-width: 48px; min-height: 48px; padding: 0 8px;
 }
+
+/* 確認面板（取代系統 confirm；預設焦點在取消） */
+.ov {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(30, 24, 16, 0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 16px; padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.panel {
+  background: var(--card); border-radius: 22px; padding: 22px 20px;
+  width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 8px;
+}
+.panel .p-title { font-size: 24px; font-weight: 800; margin: 0 0 4px; text-align: center; }
+.panel .p-line { font-size: 21px; font-weight: 700; margin: 0; text-align: center; }
+.panel .p-line.sub { font-size: 17px; color: var(--sub); font-weight: 600; }
+.panel .p-btns { display: flex; gap: 10px; margin-top: 14px; }
+.panel .p-btns .btn { flex: 1; }
+.btn.pdanger { background: var(--red); color: #fff; }
 
 /* 表單 */
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field label { font-size: 17px; font-weight: 700; color: var(--sub); }
+.field label { font-size: 19px; font-weight: 700; color: var(--sub); }
 .field input, .field select, .field textarea {
   background: var(--card); border: 2px solid var(--line); border-radius: 14px;
   min-height: 58px; padding: 0 16px; width: 100%;
@@ -166,7 +188,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
 .field input:focus:not(:focus-visible), .field select:focus:not(:focus-visible),
 .field textarea:focus:not(:focus-visible) { outline: none; }
-.field .hint { font-size: 15px; color: var(--sub); }
+.field .hint { font-size: 17px; color: var(--sub); }
 .calc-panel { background: #FDF1E2; border: 1px solid #F0D9BC; border-radius: 16px; padding: 14px 16px; }
 .calc-panel .card-label { color: var(--accent-deep); }
 .calc-panel .kv > div { border-color: #F2E0C6; font-size: 17.5px; padding: 9px 2px; }
