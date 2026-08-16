@@ -51,7 +51,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .backrow h1 { font-size: 26px; font-weight: 800; margin: 0; flex: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.chip { display: inline-flex; align-items: center; font-size: 16px; font-weight: 700;
+.chip { display: inline-flex; align-items: center; font-size: 17px; font-weight: 700;
   padding: 6px 14px; border-radius: 999px; white-space: nowrap; }
 .chip.ok   { background: var(--green-bg); color: var(--green); }
 .chip.bad  { background: var(--red-bg);   color: var(--red); }
@@ -222,13 +222,6 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .stat .n.green { color: var(--green); }
 .stat .n.red { color: var(--red); }
 .stat.wide { grid-column: 1 / -1; }
-
-.bars { display: flex; align-items: flex-end; gap: 10px; height: 110px; margin-top: 12px; }
-.bar { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; }
-.bar i { display: block; width: 100%; background: var(--green); border-radius: 7px 7px 3px 3px; opacity: .85; min-height: 2px; }
-.bar.now i { background: var(--accent); opacity: .5; }
-.bar b { font-size: 17px; color: var(--sub); font-weight: 700; }
-.bar .amt { font-size: 17px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* 環圈圖與橫條 */
 .donut-row { display: flex; align-items: center; gap: 16px; }

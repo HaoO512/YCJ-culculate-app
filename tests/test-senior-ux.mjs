@@ -91,10 +91,14 @@ assert.ok(css.includes('.panel .p-btns { flex: none; }'), '按鈕列固定');
 
 // ── 有閱讀意義的文字 ≥17px ──
 for (const sel of ['.cal-week span { text-align: center; font-size: 17px',
-  '.bar b { font-size: 17px', '.bar .amt { font-size: 17px',
-  '.debt-note { font-size: 17px']) {
+  '.debt-note { font-size: 17px',
+  '.chip { display: inline-flex; align-items: center; font-size: 17px']) {
   assert.ok(css.includes(sel), `17px：${sel.slice(0, 20)}…`);
 }
 assert.ok(/\.tab \{[\s\S]{0,120}font-size: 17px/.test(css), '分頁文字 17px');
+
+// ── 近7個月改橫向列：窄機金額不重疊 ──
+assert.ok(!css.includes('.bars {'), '直條圖樣式已移除');
+assert.ok(js.includes('（本月）') && /近 7 個月實收利息[\s\S]{0,80}hbars/.test(js), '圖表改橫向 hbar 列');
 
 console.log('適老化與防誤觸規格全過');

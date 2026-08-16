@@ -678,11 +678,6 @@ function viewProblems() {
 
 // ───────────────────────── 統計 ─────────────────────────
 
-function fmtWan(n) {
-  if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + '萬';
-  return n.toLocaleString('en-US');
-}
-
 function viewStats() {
   const now = today();
   if (!statsCursor) statsCursor = { y: now.getFullYear(), m: now.getMonth() };
@@ -781,13 +776,17 @@ function statsOverview(now) {
     </div>`;
   }
 
+  // 橫向列：320px 窄機也不會讓金額互相重疊
   const series = monthlySeries(state.payments, now, 7);
   const max = Math.max(...series.map(s => s.total), 1);
   const bars = series.map((s, i) => {
     const isNow = i === series.length - 1;
-    const h = Math.round(s.total / max * 100);
-    const label = s.total ? `<span class="amt">${fmtWan(s.total)}</span>` : '';
-    return `<div class="bar${isNow ? ' now' : ''}">${label}<i style="height:${h}%"></i><b>${s.month + 1}月</b></div>`;
+    return `
+    <div class="hbar">
+      <div class="top"><span>${s.month + 1}月${isNow ? '（本月）' : ''}</span>
+        <span class="v">${s.total ? money(s.total) : '—'}</span></div>
+      <div class="track"><div class="fill" style="width:${Math.max(s.total / max * 100, s.total > 0 ? 2 : 0)}%;background:${isNow ? 'var(--accent-deep)' : 'var(--green)'}"></div></div>
+    </div>`;
   }).join('');
 
   const fees = st.referralTotal + st.appraisalTotal;
@@ -795,7 +794,7 @@ function statsOverview(now) {
     ${principalHtml}
     <div class="card">
       <p class="card-label">近 7 個月實收利息（至本月）</p>
-      <div class="bars">${bars}</div>
+      <div class="hbars">${bars}</div>
     </div>
     <div class="card">
       <p class="card-label">歷史收支</p>
