@@ -55,4 +55,15 @@ assert.ok(css.includes('min-width: 48px; min-height: 48px'), '小按鈕 ≥48×4
 assert.ok(css.includes('--sub: #66594A'), '說明文字加深');
 assert.ok(/\.field label \{ font-size: 19px/.test(css), '表單標籤 ≥19px');
 
+// ── 回交批次：欠息處理、勾選補繳、結案摘要、匯入鎖、對比 ──
+assert.ok(js.includes('還有欠息沒處理'), '欠繳結清先處理欠息');
+assert.ok(js.includes('欠息已收') && js.includes('壞帳沖銷'), '欠息二選一');
+assert.ok(js.includes('function pickPanel'), '補繳期數可勾選');
+assert.ok(js.includes('確認結案？') && js.includes('壞帳沖銷 '), '結案前應收/實收/沖銷摘要');
+assert.ok(js.includes('async function doImport'), '匯入拆出可鎖定函數');
+assert.ok(/if \(actionBusy\) return;\s*\n\s*actionBusy = true;\s*\n\s*try \{\s*\n\s*await doImport/.test(js), '匯入解析與取代納入全域鎖');
+assert.ok(!/font-size:1[3-6]px/.test(js), 'App 內補充文字不得小於 17px');
+assert.ok(css.includes('.tab.active { color: var(--accent-deep); }'), '分頁選中用深橘');
+assert.ok(css.includes('.seg button.active { background: var(--accent-deep)'), '切換鈕用深橘底');
+
 console.log('適老化與防誤觸規格全過');

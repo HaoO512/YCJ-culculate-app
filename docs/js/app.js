@@ -57,7 +57,8 @@ function dueDayTxt(d) { return d === 'EOM' ? '月底' : `${d} 號`; }
 function mdTxt(d) { return `${d.getMonth() + 1}月${d.getDate()}日`; }
 
 // 大字確認面板（取代系統 confirm）：預設焦點在「取消」，危險動作紅色
-function confirmPanel({ title, lines = [], ok = '確定', danger = false }) {
+// 可加第三鍵 alt（回傳 'alt'）；一般用法回傳 'ok'（truthy）或 false
+function confirmPanel({ title, lines = [], ok = '確定', danger = false, alt = null, altDanger = false }) {
   return new Promise(resolve => {
     const ov = document.createElement('div');
     ov.className = 'ov';
@@ -65,6 +66,7 @@ function confirmPanel({ title, lines = [], ok = '確定', danger = false }) {
       <div class="panel" role="alertdialog" aria-label="${esc(title)}">
         <p class="p-title">${esc(title)}</p>
         ${lines.map(x => `<p class="p-line${x.sub ? ' sub' : ''}">${esc(x.sub || x)}</p>`).join('')}
+        ${alt ? `<button class="btn ${altDanger ? 'outline-red' : 'outline-grey'}" data-p="alt" style="margin-top:8px">${esc(alt)}</button>` : ''}
         <div class="p-btns">
           <button class="btn outline-grey" data-p="no">取消</button>
           <button class="btn ${danger ? 'pdanger' : 'green'}" data-p="ok">${esc(ok)}</button>
@@ -76,7 +78,40 @@ function confirmPanel({ title, lines = [], ok = '確定', danger = false }) {
       const b = e.target.closest('[data-p]');
       if (!b && e.target !== ov) return;
       ov.remove();
-      resolve(b ? b.dataset.p === 'ok' : false);
+      resolve(b ? (b.dataset.p === 'ok' ? 'ok' : b.dataset.p === 'alt' ? 'alt' : false) : false);
+    });
+  });
+}
+
+// 勾選面板：列出多期，允許只記部分（預設全勾）。回傳勾選的索引陣列，取消回傳 null
+function pickPanel({ title, items, ok = '確定' }) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'ov';
+    ov.innerHTML = `
+      <div class="panel" role="alertdialog" aria-label="${esc(title)}">
+        <p class="p-title">${esc(title)}</p>
+        <div class="p-picks">
+          ${items.map((x, i) => `
+            <label class="p-pick"><input type="checkbox" data-k="${i}" checked>
+              <span>${esc(x)}</span></label>`).join('')}
+        </div>
+        <div class="p-btns">
+          <button class="btn outline-grey" data-p="no">取消</button>
+          <button class="btn green" data-p="ok">${esc(ok)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('[data-p="no"]').focus();
+    ov.addEventListener('click', e => {
+      const b = e.target.closest('[data-p]');
+      if (!b && e.target !== ov) return;
+      if (!b) { ov.remove(); resolve(null); return; }
+      if (b.dataset.p === 'no') { ov.remove(); resolve(null); return; }
+      const picked = [...ov.querySelectorAll('input[data-k]')]
+        .filter(c => c.checked).map(c => Number(c.dataset.k));
+      ov.remove();
+      resolve(picked);
     });
   });
 }
@@ -88,7 +123,7 @@ function periodTag(p) {
   if (!p.dueDate) return '';
   const a = parseDate(p.dueDate), b = parseDate(p.date);
   if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()) return '';
-  return `<span style="font-size:14px;color:var(--sub);font-weight:700">補${a.getMonth() + 1}/${a.getDate()}期</span>`;
+  return `<span style="font-size:17px;color:var(--sub);font-weight:700">補${a.getMonth() + 1}/${a.getDate()}期</span>`;
 }
 
 // ───────────────────────── 首頁 ─────────────────────────
@@ -430,9 +465,9 @@ function viewForm() {
       <h1>${editing ? '編輯借款' : '新增借款'}</h1>
     </div>
     ${locked ? `
-      <p class="hint" style="color:var(--red);font-size:16px;font-weight:700;margin:0 2px">已結清：金額與日期已鎖定。要更正請先撤銷結清。</p>
+      <p class="hint" style="color:var(--red);font-size:18px;font-weight:700;margin:0 2px">已結清：金額與日期已鎖定。要更正請先撤銷結清。</p>
       <button class="btn accent" data-action="reopen" data-id="${editing.id}">撤銷結清</button>`
-    : editing ? '<p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
+    : editing ? '<p class="hint" style="color:var(--sub);font-size:17px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
 
     <div class="field"><label>借款人姓名</label>
       <input id="f-name" value="${esc(l.name)}" placeholder="王小明"></div>
@@ -828,17 +863,17 @@ function viewSettings() {
 
     <p class="section-h">行事曆</p>
     <button class="btn outline-grey" data-action="ics-all">全部加到行事曆</button>
-    <p class="hint" style="color:var(--sub);font-size:15px;margin:0 2px">${cloud.meta().pushOn
+    <p class="hint" style="color:var(--sub);font-size:17px;margin:0 2px">${cloud.meta().pushOn
       ? '已開自動提醒 —— 行事曆可以不用再加，兩邊都加會重複通知。'
       : '行事曆會在收息日前一天與當天 09:30 各提醒一次；開了上面的自動提醒就不需要。'}</p>
 
     <p class="section-h">備份</p>
     <button class="btn outline-grey" data-action="export-xlsx">匯出 Excel 檔（備份／傳電腦）</button>
     <button class="btn outline-grey" data-action="import-xlsx">匯入 Excel 檔</button>
-    <p class="hint" style="text-align:center;color:var(--sub);font-size:15px;margin:0">${backupTxt}</p>
+    <p class="hint" style="text-align:center;color:var(--sub);font-size:17px;margin:0">${backupTxt}</p>
 
     <details class="acc"><summary>進階（同步金鑰）</summary><div class="acc-body">
-      <p class="hint" style="color:var(--sub);font-size:15px;margin:0">金鑰＝資料的鑰匙。抄下收好；換手機或第二台裝置輸入它連回同一份帳。</p>
+      <p class="hint" style="color:var(--sub);font-size:17px;margin:0">金鑰＝資料的鑰匙。抄下收好；換手機或第二台裝置輸入它連回同一份帳。</p>
       <div class="btn-pair">
         <button class="btn outline-grey" data-action="cloud-show-key">顯示同步金鑰</button>
         <button class="btn outline-grey" data-action="cloud-set-key">輸入金鑰連線</button>
@@ -978,17 +1013,16 @@ const actions = {
     // 各期只補「剩餘金額」：已有部分款不會被重複加成超額
     const list = missedPeriods(state, l, today());
     if (!list.length) { render(); return; }
-    const total = list.reduce((s, x) => s + x.remaining, 0);
-    const ok = await confirmPanel({
-      title: `記補繳（${list.length}期）？`,
-      lines: [l.name, money(total),
-        { sub: list.map(x => `${x.date.getMonth() + 1}/${x.date.getDate()} 補 ${money(x.remaining)}`).join('、') },
-        { sub: '收款日記今天，各期歸屬原收息日' }],
+    // 列出各期讓使用者勾：實際只收到部分時，取消勾選沒收到的期
+    const picked = await pickPanel({
+      title: `記補繳（${l.name}）`,
+      items: list.map(x => `${x.date.getMonth() + 1}/${x.date.getDate()} 補 ${money(x.remaining)}`),
       ok: '記補繳',
     });
-    if (!ok) return;
+    if (!picked || !picked.length) return;
     const todayStr = fmtDate(today());
-    for (const x of list) {
+    for (const i of picked) {
+      const x = list[i];
       state.payments.push({ id: newId(), loanId: l.id, date: todayStr, dueDate: fmtDate(x.date), amount: x.remaining });
     }
     commit();
@@ -1138,7 +1172,7 @@ const actions = {
       setTimeout(() => alert('已恢復正常。\n行事曆檔已下載：點開按「加入」，每月提醒就接回來了。'), 300);
     }
   },
-  'settle-legal'(el) {
+  async 'settle-legal'(el) {
     const l = loanById(el.dataset.id);
     const now = today();
     const owed = l.principal + overdueInterest(l, now, state.payments);
@@ -1146,8 +1180,19 @@ const actions = {
     if (v == null) return;
     const got = Number(v);
     if (!(Number.isFinite(got) && got >= 0)) { alert('金額不對'); return; }
+    // 打錯金額的最後防線：先看摘要再寫入
+    const wo = Math.max(0, owed - got);
+    const ok = await confirmPanel({
+      title: '確認結案？',
+      lines: [l.name,
+        { sub: `應收 ${money(owed)}` },
+        { sub: `實收 ${money(got)}` },
+        { sub: `壞帳沖銷 ${money(wo)}` }],
+      ok: '確認結案', danger: true,
+    });
+    if (!ok) return;
     l.finalReceived = got;
-    l.writeoff = Math.max(0, owed - got);
+    l.writeoff = wo;
     l.status = 'closed';
     l.closedDate = fmtDate(now);
     commit();
@@ -1156,6 +1201,21 @@ const actions = {
   },
   async 'close-normal'(el) {
     const l = loanById(el.dataset.id);
+    // 欠繳中的帳：欠息不能無聲消失，先選處理方式
+    const accrued = isProblem(l) ? overdueInterest(l, today(), state.payments) : 0;
+    if (accrued > 0) {
+      const r = await confirmPanel({
+        title: '還有欠息沒處理',
+        lines: [l.name, `欠息 ${money(accrued)}`, { sub: '先選欠息怎麼處理，才能結清本金' }],
+        ok: '欠息已收', alt: '壞帳沖銷', altDanger: true,
+      });
+      if (!r) return;
+      if (r === 'ok') {
+        state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(today()), amount: accrued });
+      } else {
+        l.writeoff = (l.writeoff || 0) + accrued;
+      }
+    }
     const ok = await confirmPanel({
       title: '確認結清？',
       lines: [l.name, { sub: `本金 ${money(l.principal)} 已還清，這筆帳結束` }],
@@ -1361,6 +1421,17 @@ $importFile.addEventListener('change', async () => {
   const f = $importFile.files[0];
   $importFile.value = '';
   if (!f) return;
+  // 匯入的實際解析、確認與取代都在這裡發生：整段納入全域鎖
+  if (actionBusy) return;
+  actionBusy = true;
+  try {
+    await doImport(f);
+  } finally {
+    actionBusy = false;
+  }
+});
+
+async function doImport(f) {
   const buf = await f.arrayBuffer();
   let result;
   try { result = parseXlsx(buf); }
@@ -1381,7 +1452,7 @@ $importFile.addEventListener('change', async () => {
   result.state.lastExport = state.lastExport;
   state = result.state;
   save(state); go('home');
-});
+}
 
 // service worker
 if ('serviceWorker' in navigator) {

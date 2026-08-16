@@ -101,7 +101,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
   font-family: inherit; font-size: inherit; color: inherit; text-align: left;
 }
 .slim .l { font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.slim .l small { font-size: 16px; font-weight: 700; color: var(--sub); flex: none; }
+.slim .l small { font-size: 17px; font-weight: 700; color: var(--sub); flex: none; }
 .slim .l .paid { color: var(--green); font-size: 20px; flex: none; }
 .slim .r { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .slim.notice { background: var(--amber-bg); border-color: #F0CFA0; }
@@ -117,7 +117,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .hero-amt { text-align: center; padding: 20px 16px 18px; }
 .hero-amt .label { font-size: 17px; color: var(--sub); font-weight: 700; margin: 0; }
 .hero-amt .num { font-size: 42px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0; }
-.hero-amt .when { font-size: 18px; font-weight: 700; color: var(--accent); margin: 0; }
+.hero-amt .when { font-size: 18px; font-weight: 700; color: var(--accent-deep); margin: 0; }
 
 .kv { display: flex; flex-direction: column; }
 .kv > div {
@@ -174,6 +174,12 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .panel .p-btns { display: flex; gap: 10px; margin-top: 14px; }
 .panel .p-btns .btn { flex: 1; }
 .btn.pdanger { background: var(--red); color: #fff; }
+.p-picks { display: flex; flex-direction: column; gap: 8px; margin: 6px 0; }
+.p-pick {
+  display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 700;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+}
+.p-pick input { width: 26px; height: 26px; accent-color: var(--green); flex: none; }
 
 /* 表單 */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -204,7 +210,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 /* 統計 */
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
-.stat .k { font-size: 16px; color: var(--sub); font-weight: 700; margin: 0; }
+.stat .k { font-size: 17px; color: var(--sub); font-weight: 700; margin: 0; }
 .stat .n { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0 0; }
 .stat .n.green { color: var(--green); }
 .stat .n.red { color: var(--red); }
@@ -221,7 +227,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .donut-row { display: flex; align-items: center; gap: 16px; }
 .donut-row svg { width: 150px; height: 150px; flex: none; }
 .dlegend { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 0; }
-.dlegend .li { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
+.dlegend .li { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; }
 .dlegend .li i { width: 14px; height: 14px; border-radius: 5px; flex: none; }
 .dlegend .li .v { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
 .hbars { display: flex; flex-direction: column; gap: 14px; }
@@ -240,8 +246,8 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
   position: absolute; top: -4px; right: -4px; width: 13px; height: 13px;
   border-radius: 999px; background: var(--red); border: 2px solid var(--bg);
 }
-.addbtn {
-  height: 46px; border-radius: 12px; border: 0; background: var(--accent); color: #fff;
+.addbtn { /* 深橘：白字對比達標 */
+  height: 46px; border-radius: 12px; border: 0; background: var(--accent-deep); color: #fff;
   font-family: inherit; font-size: 17px; font-weight: 800; padding: 0 14px; white-space: nowrap;
 }
 
@@ -254,13 +260,13 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
   flex: 1; border: 0; background: none; border-radius: 10px; min-height: 46px;
   font-family: inherit; font-size: 18px; font-weight: 800; color: var(--sub);
 }
-.seg button.active { background: var(--accent); color: #fff; }
+.seg button.active { background: var(--accent-deep); color: #fff; }
 
 /* 平面三欄（垂直分隔線，不再卡片包卡片） */
 .triple { display: flex; margin-top: 6px; }
 .triple > div { flex: 1; text-align: center; padding: 8px 4px; min-width: 0; }
 .triple > div + div { border-left: 1px solid var(--line); }
-.triple .k { font-size: 15px; color: var(--sub); font-weight: 700; margin: 0; }
+.triple .k { font-size: 17px; color: var(--sub); font-weight: 700; margin: 0; }
 .triple .n { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 3px 0 0; }
 .triple .n.green { color: var(--green); }
 .triple .n.red { color: var(--red); }
@@ -274,13 +280,13 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .formula .fr .v.green { color: var(--green); }
 .formula .fr .v.red { color: var(--red); }
 .formula .fr.eq { border-top: 2px solid var(--line); font-size: 21px; }
-.formula .fnote { font-size: 14px; color: var(--sub); margin: 0 2px 4px; }
+.formula .fnote { font-size: 17px; color: var(--sub); margin: 0 2px 4px; }
 .hero-num { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0 0; }
 
 /* 欠繳緊湊列 */
 .pcol { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .pcol .name { font-size: 21px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.psub { font-size: 15px; color: var(--sub); font-weight: 600; }
+.psub { font-size: 17px; color: var(--sub); font-weight: 600; }
 .chev { color: var(--sub); font-size: 24px; font-weight: 700; flex: none; }
 
 /* 摺疊區 */
@@ -319,7 +325,7 @@ details.acc .acc-body { padding: 0 16px 16px; display: flex; flex-direction: col
   border: 0; background: none; font-family: inherit; padding: 4px 0;
 }
 .tab svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2; }
-.tab.active { color: var(--accent); }
+.tab.active { color: var(--accent-deep); }
 .tab .badge-dot { position: relative; display: inline-flex; }
 .tab .badge-dot .n {
   position: absolute; top: -4px; right: -12px;
@@ -327,7 +333,7 @@ details.acc .acc-body { padding: 0 16px 16px; display: flex; flex-direction: col
   min-width: 17px; height: 17px; border-radius: 999px;
   display: grid; place-items: center; padding: 0 3px;
 }
-.tab.add { color: var(--accent); }
+.tab.add { color: var(--accent-deep); }
 .tab.add .fab {
   width: 28px; height: 28px; border-radius: 9px; background: var(--accent);
   display: grid; place-items: center;
