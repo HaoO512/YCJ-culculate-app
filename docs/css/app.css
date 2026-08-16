@@ -70,7 +70,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
   background: var(--bg); font-size: 22px; color: var(--sub); font-weight: 700; font-family: inherit;
 }
 .cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
-.cal-week span { text-align: center; font-size: 14px; font-weight: 700; color: var(--sub); padding-bottom: 4px; }
+.cal-week span { text-align: center; font-size: 17px; font-weight: 700; color: var(--sub); padding-bottom: 4px; }
 .cal-grid { gap: 3px; }
 .cal-grid .day {
   height: 50px; border: 0; background: none; font-family: inherit; padding: 0;
@@ -88,7 +88,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .day.sel { outline: 3px solid var(--accent); outline-offset: -3px; }
 .cal-legend {
   display: flex; gap: 18px; justify-content: center; margin-top: 8px; padding-top: 10px;
-  border-top: 1px solid var(--line); font-size: 15px; font-weight: 700; color: var(--sub);
+  border-top: 1px solid var(--line); font-size: 17px; font-weight: 700; color: var(--sub);
 }
 .cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .cal-legend .today-chip { width: 14px; height: 14px; border-radius: 5px; background: var(--accent); display: inline-block; }
@@ -167,6 +167,8 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .panel {
   background: var(--card); border-radius: 22px; padding: 22px 20px;
   width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 8px;
+  max-height: calc(100dvh - 32px - env(safe-area-inset-bottom));
+  overflow: hidden;
 }
 .panel .p-title { font-size: 24px; font-weight: 800; margin: 0 0 4px; text-align: center; }
 .panel .p-line { font-size: 21px; font-weight: 700; margin: 0; text-align: center; }
@@ -174,7 +176,12 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .panel .p-btns { display: flex; gap: 10px; margin-top: 14px; }
 .panel .p-btns .btn { flex: 1; }
 .btn.pdanger { background: var(--red); color: #fff; }
-.p-picks { display: flex; flex-direction: column; gap: 8px; margin: 6px 0; }
+.p-picks {
+  display: flex; flex-direction: column; gap: 8px; margin: 6px 0;
+  min-height: 0; max-height: 50dvh; overflow-y: auto;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+.panel .p-btns { flex: none; }
 .p-pick {
   display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 700;
   padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
@@ -202,7 +209,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 /* 問題帳 */
 .debt-card .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
 .debt-card .who { font-size: 23px; font-weight: 800; }
-.debt-note { font-size: 16.5px; color: var(--sub); margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
+.debt-note { font-size: 17px; color: var(--sub); margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
 .debt-sum { background: var(--red-bg); border-color: #EBC9C4; }
 .debt-sum .num { color: var(--red); font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 0; }
 .debt-sum .sub { font-size: 17px; color: var(--sub); margin: 4px 0 0; }
@@ -220,8 +227,8 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .bar { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; }
 .bar i { display: block; width: 100%; background: var(--green); border-radius: 7px 7px 3px 3px; opacity: .85; min-height: 2px; }
 .bar.now i { background: var(--accent); opacity: .5; }
-.bar b { font-size: 13px; color: var(--sub); font-weight: 700; }
-.bar .amt { font-size: 14px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar b { font-size: 17px; color: var(--sub); font-weight: 700; }
+.bar .amt { font-size: 17px; color: var(--sub); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* 環圈圖與橫條 */
 .donut-row { display: flex; align-items: center; gap: 16px; }
@@ -231,7 +238,7 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .dlegend .li i { width: 14px; height: 14px; border-radius: 5px; flex: none; }
 .dlegend .li .v { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
 .hbars { display: flex; flex-direction: column; gap: 14px; }
-.hbar .top { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; font-weight: 700; margin-bottom: 5px; }
+.hbar .top { display: flex; justify-content: space-between; gap: 8px; font-size: 17px; font-weight: 700; margin-bottom: 5px; }
 .hbar .top .v { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
 .hbar .track { background: var(--bg); border-radius: 8px; height: 22px; overflow: hidden; }
 .hbar .fill { height: 100%; border-radius: 8px; min-width: 0; }
@@ -321,7 +328,7 @@ details.acc .acc-body { padding: 0 16px 16px; display: flex; flex-direction: col
 }
 .tab {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font-size: 14px; font-weight: 700; color: var(--sub);
+  font-size: 17px; font-weight: 700; color: var(--sub);
   border: 0; background: none; font-family: inherit; padding: 4px 0;
 }
 .tab svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2; }

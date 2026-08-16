@@ -1201,27 +1201,37 @@ const actions = {
   },
   async 'close-normal'(el) {
     const l = loanById(el.dataset.id);
-    // 欠繳中的帳：欠息不能無聲消失，先選處理方式
+    // 原則：所有確認面板走完之前，不准動 state —— 中途取消不能留下隱藏改帳
     const accrued = isProblem(l) ? overdueInterest(l, today(), state.payments) : 0;
+    let arrearsChoice = null;
     if (accrued > 0) {
-      const r = await confirmPanel({
+      arrearsChoice = await confirmPanel({
         title: '還有欠息沒處理',
         lines: [l.name, `欠息 ${money(accrued)}`, { sub: '先選欠息怎麼處理，才能結清本金' }],
         ok: '欠息已收', alt: '壞帳沖銷', altDanger: true,
       });
-      if (!r) return;
-      if (r === 'ok') {
+      if (!arrearsChoice) return;
+    }
+    const ok = await confirmPanel({
+      title: '確認結清？',
+      lines: [l.name,
+        ...(accrued > 0 ? [{
+          sub: arrearsChoice === 'ok'
+            ? `欠息 ${money(accrued)}：已收`
+            : `欠息 ${money(accrued)}：壞帳沖銷`,
+        }] : []),
+        { sub: `本金 ${money(l.principal)} 已還清` }],
+      ok: '確認結清', danger: true,
+    });
+    if (!ok) return;
+    // 最終確認後，才允許修改資料
+    if (accrued > 0) {
+      if (arrearsChoice === 'ok') {
         state.payments.push({ id: newId(), loanId: l.id, date: fmtDate(today()), amount: accrued });
       } else {
         l.writeoff = (l.writeoff || 0) + accrued;
       }
     }
-    const ok = await confirmPanel({
-      title: '確認結清？',
-      lines: [l.name, { sub: `本金 ${money(l.principal)} 已還清，這筆帳結束` }],
-      ok: '確認結清', danger: true,
-    });
-    if (!ok) return;
     l.status = 'closed';
     l.closedDate = fmtDate(today());
     commit();
@@ -1311,7 +1321,10 @@ const actions = {
     state.lastExport = fmtDate(today());
     save(state); render();
   },
-  'import-xlsx'() { $importFile.click(); },
+  'import-xlsx'() {
+    if (actionBusy) return;
+    $importFile.click();
+  },
 
   async 'cloud-sync-now'() {
     try {
@@ -1390,9 +1403,10 @@ const WRITE_ACTIONS = new Set([
   'save-form', 'receive', 'receive-missed', 'repay-overdue',
   'del-payment', 'payedit-save', 'mark-overdue', 'back-normal',
   'to-legal', 'delegal', 'close-normal', 'settle-legal', 'reopen',
-  'fill-closed', 'delete-loan', 'import-xlsx', 'export-xlsx',
+  'fill-closed', 'delete-loan', 'export-xlsx',
   'cloud-sync-now', 'cloud-push-enable', 'cloud-set-key',
 ]);
+// 「匯入」按鈕只開檔案選擇器，不在此鎖；真正的解析與取代在 change 事件內上鎖
 let actionBusy = false;
 
 document.getElementById('app').addEventListener('click', e => {
@@ -1420,12 +1434,13 @@ document.getElementById('app').addEventListener('click', e => {
 $importFile.addEventListener('change', async () => {
   const f = $importFile.files[0];
   $importFile.value = '';
-  if (!f) return;
-  // 匯入的實際解析、確認與取代都在這裡發生：整段納入全域鎖
-  if (actionBusy) return;
+  if (!f || actionBusy) return;
+  // 選到檔案才上鎖：解析、確認與整批取代全程互斥，至少 800ms
   actionBusy = true;
   try {
-    await doImport(f);
+    await Promise.all([doImport(f), delay(800)]);
+  } catch {
+    alert('匯入時發生錯誤，原本資料沒有變動。');
   } finally {
     actionBusy = false;
   }

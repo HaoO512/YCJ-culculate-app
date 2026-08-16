@@ -18,8 +18,15 @@ assert.ok(js.includes('actionBusy'), '全域鎖存在');
 assert.ok(js.includes('處理中…'), '處理期間顯示處理中');
 assert.ok(js.includes('delay(800)'), '至少鎖 800ms');
 for (const a of ['save-form', 'receive', 'receive-missed', 'del-payment', 'mark-overdue',
-  'back-normal', 'close-normal', 'settle-legal', 'delete-loan', 'import-xlsx']) {
+  'back-normal', 'close-normal', 'settle-legal', 'delete-loan']) {
   assert.ok(js.includes(`'${a}'`), `寫入動作 ${a} 已納入鎖定`);
+}
+// 匯入鎖競爭：按鈕只開選擇器不佔鎖；選到檔案後鎖住解析與取代
+{
+  const wa = js.match(/WRITE_ACTIONS = new Set\(\[[\s\S]*?\]\)/)[0];
+  assert.ok(!wa.includes('import-xlsx'), '開檔案選擇器不佔全域鎖');
+  assert.ok(/await Promise\.all\(\[doImport\(f\), delay\(800\)\]\)/.test(js), '解析+取代全程鎖定至少800ms');
+  assert.ok(js.includes('匯入時發生錯誤，原本資料沒有變動'), '匯入失敗有明確回饋');
 }
 
 // ── 六、確認面板 ──
@@ -61,9 +68,33 @@ assert.ok(js.includes('欠息已收') && js.includes('壞帳沖銷'), '欠息二
 assert.ok(js.includes('function pickPanel'), '補繳期數可勾選');
 assert.ok(js.includes('確認結案？') && js.includes('壞帳沖銷 '), '結案前應收/實收/沖銷摘要');
 assert.ok(js.includes('async function doImport'), '匯入拆出可鎖定函數');
-assert.ok(/if \(actionBusy\) return;\s*\n\s*actionBusy = true;\s*\n\s*try \{\s*\n\s*await doImport/.test(js), '匯入解析與取代納入全域鎖');
+assert.ok(/if \(!f \|\| actionBusy\) return;\s*\n[\s\S]{0,120}actionBusy = true;/.test(js), '選到檔案才上鎖，鎖住解析與取代');
 assert.ok(!/font-size:1[3-6]px/.test(js), 'App 內補充文字不得小於 17px');
 assert.ok(css.includes('.tab.active { color: var(--accent-deep); }'), '分頁選中用深橘');
 assert.ok(css.includes('.seg button.active { background: var(--accent-deep)'), '切換鈕用深橘底');
+
+// ── 結清流程：最終確認前不得動帳 ──
+{
+  const fn = js.slice(js.indexOf("async 'close-normal'"), js.indexOf("async 'delete-loan'"));
+  const firstWrite = Math.min(
+    ...['state.payments.push', 'l.writeoff', "l.status = 'closed'"]
+      .map(s => { const i = fn.indexOf(s); return i < 0 ? Infinity : i; }));
+  const finalOk = fn.indexOf('最終確認後');
+  assert.ok(finalOk > 0 && firstWrite > finalOk, '結清：所有寫入都在最終確認之後');
+  assert.ok(fn.includes('arrearsChoice'), '欠息選擇先記住、後執行');
+}
+
+// ── 補繳面板可捲動、按鈕固定 ──
+assert.ok(css.includes('max-height: calc(100dvh'), '面板不超出螢幕');
+assert.ok(css.includes('max-height: 50dvh; overflow-y: auto'), '期數區獨立捲動');
+assert.ok(css.includes('.panel .p-btns { flex: none; }'), '按鈕列固定');
+
+// ── 有閱讀意義的文字 ≥17px ──
+for (const sel of ['.cal-week span { text-align: center; font-size: 17px',
+  '.bar b { font-size: 17px', '.bar .amt { font-size: 17px',
+  '.debt-note { font-size: 17px']) {
+  assert.ok(css.includes(sel), `17px：${sel.slice(0, 20)}…`);
+}
+assert.ok(/\.tab \{[\s\S]{0,120}font-size: 17px/.test(css), '分頁文字 17px');
 
 console.log('適老化與防誤觸規格全過');
