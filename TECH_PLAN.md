@@ -61,8 +61,7 @@ docs/   ← GitHub Pages 從 main 分支 /docs 服務
     status,                   // normal | overdue | legal | closed
     overdueSince,             // 停繳日（欠繳時才有）
     finalReceived,            // 法院結案實收（結案時才有）
-    referralFee,              // 介紹費（預設 = 月息 × 0.5，可改）
-    appraisalFee,             // 代書費（預設 3000，可改）
+    referralFee,              // 介紹費（預設 = 月息 × 0.5，可改；代書費由客戶負擔不入系統）
     note
   }],
   payments: [{ id, loanId, date, amount }]   // 收款記錄
@@ -72,7 +71,7 @@ docs/   ← GitHub Pages 從 main 分支 /docs 服務
 ## 5. 核心計算（calc.js，全部純函數可測）
 
 - 月息 `= round(principal × rate / 100)`
-- 介紹費預設 `= 月息 × 0.5`；代書費預設 `3000`
+- 介紹費預設 `= 月息 × 0.5`；代書費由客戶負擔，不列入收入、費用或淨收入
 - 欠繳期數 `= overdueSince 起，已過的收息日個數（單利）`
 - 累計欠息 `= 欠繳期數 × 月息`
 - 壞帳沖銷 `= (未還本金 + 累計欠息) − finalReceived`（legal 結案時）

@@ -28,8 +28,9 @@ export function load() {
       if (l.overdueSince != null && dateOk(l.overdueSince) && l.overdueSince < l.startDate) throw new Error('overdueSince before start');
       if (l.closedDate != null && (!dateOk(l.closedDate) || l.closedDate < l.startDate)) throw new Error('bad closedDate');
       if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) throw new Error('bad prepaidMonths');
+      // 代書費已退役：舊資料的 appraisalFee 直接忽略，不驗證、不判損壞
       const moneyOk = v => v == null || (Number.isFinite(v) && v >= 0);
-      if (!moneyOk(l.referralFee) || !moneyOk(l.appraisalFee) || !moneyOk(l.finalReceived) || !moneyOk(l.writeoff)) throw new Error('bad fee');
+      if (!moneyOk(l.referralFee) || !moneyOk(l.finalReceived) || !moneyOk(l.writeoff)) throw new Error('bad fee');
     }
     if (s.tombstones != null) {
       if (!Array.isArray(s.tombstones) || s.tombstones.length > 100) throw new Error('bad tombstones');

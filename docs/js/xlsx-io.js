@@ -22,7 +22,6 @@ export function exportXlsx(state) {
     '停繳日': l.overdueSince || '',
     '結清日': l.closedDate || '',
     '介紹費': l.referralFee || 0,
-    '代書費': l.appraisalFee || 0,
     '結案實收': l.finalReceived ?? '',
     '壞帳沖銷': l.writeoff ?? '',
     '備註': l.note || '',
@@ -112,9 +111,7 @@ export function parseXlsx(arrayBuffer) {
     const prepaidMonths = Number(r['預收月數'] || 0);
     if (!(Number.isInteger(prepaidMonths) && prepaidMonths >= 0 && prepaidMonths <= 12)) errors.push(`${rowNo}：預收月數要 0–12 的整數`);
     const referralFee = Number(r['介紹費'] || 0);
-    const appraisalFee = Number(r['代書費'] || 0);
     if (!(Number.isFinite(referralFee) && referralFee >= 0)) errors.push(`${rowNo}：介紹費無效`);
-    if (!(Number.isFinite(appraisalFee) && appraisalFee >= 0)) errors.push(`${rowNo}：代書費無效`);
 
     const finalReceived = r['結案實收'] === '' || r['結案實收'] == null ? null : Number(r['結案實收']);
     const writeoff = r['壞帳沖銷'] === '' || r['壞帳沖銷'] == null ? null : Number(r['壞帳沖銷']);
@@ -129,7 +126,7 @@ export function parseXlsx(arrayBuffer) {
       closedDate,
       finalReceived,
       writeoff,
-      referralFee, appraisalFee,
+      referralFee,
       note: String(r['備註'] || ''),
     });
   });

@@ -26,7 +26,6 @@ export function defaultReferral(principal, rate) {
   return Math.round(principal * rate / 100 / 2);
 }
 
-export const DEFAULT_APPRAISAL = 3000;
 
 // 某年某月的收息日（dueDay: 1–31 或 'EOM' 月底）。month 0-based。
 // 29–31：當月有該號就用該號，沒有就退到當月最後一天（2 月 → 28/29）
@@ -159,8 +158,8 @@ export function stats(state, now) {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() ? s + p.amount : s;
   }, 0);
 
+  // 費用只剩介紹費；代書費由客戶負擔，已從系統退役
   const referralTotal = state.loans.reduce((s, l) => s + (l.referralFee || 0), 0);
-  const appraisalTotal = state.loans.reduce((s, l) => s + (l.appraisalFee || 0), 0);
 
   const overdueInt = problems.reduce((s, l) => s + overdueInterest(l, now, state.payments), 0);
   const overduePrincipal = problems.reduce((s, l) => s + l.principal, 0);
@@ -170,8 +169,8 @@ export function stats(state, now) {
   return {
     principalOut, received, yearReceived,
     monthDue, monthReceived,
-    referralTotal, appraisalTotal,
-    net: received - referralTotal - appraisalTotal,
+    referralTotal,
+    net: received - referralTotal,
     overdueInt, overduePrincipal,
     overdueTotal: overduePrincipal + overdueInt,
     problemCount: problems.length,
@@ -206,12 +205,20 @@ export function monthReport(state, y, m, now) {
   const payList = state.payments.filter(inMonth)
     .sort((a, b) => a.date.localeCompare(b.date));
   const received = payList.reduce((s, p) => s + p.amount, 0);
+  // 本月付出費用（現金收付制）：介紹費為簽約一次性費用，以借款日歸月
+  // 四種狀態的借款都計入；代書費由客戶負擔，不列入本系統
+  const expense = state.loans.reduce((s, l) => {
+    const sd = parseDate(l.startDate);
+    return sd.getFullYear() === y && sd.getMonth() === m ? s + (l.referralFee || 0) : s;
+  }, 0);
   const unpaidAll = rows.filter(r => !r.paid).sort((a, b) => a.day - b.day);
   const unpaidRows = unpaidAll.filter(r => r.expired);   // 已到期未收（要處理的）
   const notYetRows = unpaidAll.filter(r => !r.expired);  // 尚未到期（正常）
   return {
     due: rows.reduce((s, r) => s + r.amount, 0),
     received,
+    expense,
+    net: received - expense,
     unpaid: unpaidAll.reduce((s, r) => s + r.amount, 0),
     dueUnpaid: unpaidRows.reduce((s, r) => s + r.amount, 0),
     notYet: notYetRows.reduce((s, r) => s + r.amount, 0),
@@ -295,5 +302,6 @@ export function mergeTombstones(current, imported, liveIds) {
 }
 
 export function money(n) {
-  return '$' + Math.round(n).toLocaleString('en-US');
+  const r = Math.round(n);
+  return r < 0 ? '-$' + Math.abs(r).toLocaleString('en-US') : '$' + r.toLocaleString('en-US');
 }

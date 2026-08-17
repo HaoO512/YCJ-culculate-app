@@ -1,7 +1,7 @@
 // 借貸管家 — 主程式（畫面渲染 + 操作）
 import { load, save, newId } from './store.js';
 import {
-  parseDate, fmtDate, today, monthlyInterest, defaultReferral, DEFAULT_APPRAISAL,
+  parseDate, fmtDate, today, monthlyInterest, defaultReferral,
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth, monthPaidAmount,
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
@@ -442,7 +442,6 @@ function viewDetail() {
         <div><span class="k">借款日期</span><span class="v">${l.startDate}</span></div>
         ${l.prepaidMonths ? `<div><span class="k">簽約預收</span><span class="v">${l.prepaidMonths} 個月（至 ${pu ? mdTxt(pu) : ''}）</span></div>` : ''}
         <div><span class="k">介紹費</span><span class="v">${money(l.referralFee || 0)}</span></div>
-        <div><span class="k">代書費</span><span class="v">${money(l.appraisalFee || 0)}</span></div>
         ${l.note ? `<div><span class="k">備註</span><span class="v" style="font-weight:600">${esc(l.note)}</span></div>` : ''}
       </div>
     </div></details>
@@ -464,7 +463,7 @@ function viewForm() {
   const l = editing || {
     name: '', principal: '', rate: 2,
     startDate: fmtDate(today()), dueDay: today().getDate(),
-    prepaidMonths: 3, referralFee: '', appraisalFee: DEFAULT_APPRAISAL, note: '',
+    prepaidMonths: 3, referralFee: '', note: '',
   };
   const pm = l.prepaidMonths ?? 0;
   const pmOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n =>
@@ -507,8 +506,6 @@ function viewForm() {
 
     <div class="field"><label>介紹費（可改）</label>
       <input id="f-referral" inputmode="numeric" value="${l.referralFee}"></div>
-    <div class="field"><label>代書費（可改）</label>
-      <input id="f-appraisal" inputmode="numeric" value="${l.appraisalFee}"></div>
     <div class="field"><label>備註（選填）</label>
       <textarea id="f-note">${esc(l.note)}</textarea></div>
 
@@ -546,8 +543,7 @@ function refreshFormCalc() {
     <div><span class="k">每月利息</span><span class="v">${money(mi)}</span></div>
     ${pmSel ? `<div><span class="k">簽約當天收（${pmSel} 個月息）</span><span class="v">${money(mi * pmSel)}</span></div>` : ''}
     ${scheduleRows}
-    <div><span class="k">介紹費（半個月息）</span><span class="v">${money(Math.round(mi / 2))}</span></div>
-    <div><span class="k">代書費</span><span class="v">${money(Number(document.getElementById('f-appraisal').value) || 0)}</span></div>`;
+    <div><span class="k">介紹費（半個月息）</span><span class="v">${money(Math.round(mi / 2))}</span></div>`;
   const ref = document.getElementById('f-referral');
   if (ref && !ref.dataset.touched) ref.value = Math.round(mi / 2) || '';
 }
@@ -561,7 +557,6 @@ async function saveForm(id) {
   const dueDay = dv === 'EOM' ? 'EOM' : Number(dv);
   const prepaidMonths = Number(document.getElementById('f-prepaid').value) || 0;
   const referralFee = Number(document.getElementById('f-referral').value) || 0;
-  const appraisalFee = Number(document.getElementById('f-appraisal').value) || 0;
   const note = document.getElementById('f-note').value.trim();
 
   const errs = [];
@@ -570,7 +565,6 @@ async function saveForm(id) {
   if (!(Number.isFinite(rate) && rate > 0 && rate <= 20)) errs.push('月利率不合理');
   if (!startDate) errs.push('借款日期要填');
   if (!(Number.isFinite(referralFee) && referralFee >= 0)) errs.push('介紹費不能是負數');
-  if (!(Number.isFinite(appraisalFee) && appraisalFee >= 0)) errs.push('代書費不能是負數');
   if (errs.length) { alert(errs.join('\n')); return; }
 
   if (id) {
@@ -579,7 +573,7 @@ async function saveForm(id) {
       l.startDate !== startDate || l.dueDay !== dueDay || (l.prepaidMonths || 0) !== prepaidMonths;
     // 已結清／結案：金額與日期鎖定，避免與歷史結案金額矛盾
     if (l.status === 'closed' && coreChanged) {
-      alert('已結清的帳只能改姓名、介紹費、代書費、備註。\n金額或日期真的錯了，先在「更多操作」按「撤銷結清」再改。');
+      alert('已結清的帳只能改姓名、介紹費、備註。\n金額或日期真的錯了，先在「更多操作」按「撤銷結清」再改。');
       return;
     }
     // 日期關係：存進去才發現壞掉會整份進救援流程，這裡先擋
@@ -594,7 +588,7 @@ async function saveForm(id) {
     const oldMi = monthlyInterest(l);
     const oldPm = l.prepaidMonths || 0;
     const oldStart = l.startDate;
-    Object.assign(l, { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, appraisalFee, note });
+    Object.assign(l, { name, principal, rate, startDate, dueDay, prepaidMonths, referralFee, note });
 
     // 簽約預收款跟著改，不留舊金額舊日期的錯帳
     const newMi = Math.round(principal * rate / 100);
@@ -631,7 +625,7 @@ async function saveForm(id) {
     const loan = {
       id: newId(), name, principal, rate, startDate, dueDay, prepaidMonths,
       status: 'normal', overdueSince: null, finalReceived: null, writeoff: null,
-      referralFee, appraisalFee, note,
+      referralFee, note,
     };
     state.loans.push(loan);
     // 預收利息：簽約當天記一筆收款
@@ -730,6 +724,14 @@ function statsMonthView(now) {
         <div><p class="k">到期未收</p>
           <p class="n ${rp.dueUnpaid ? 'red' : ''}">${money(rp.dueUnpaid)}</p></div>
       </div>
+      <p class="card-label" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">本月損益</p>
+      <div class="formula">
+        <div class="fr"><span>＋ 實收利息</span><span class="v green">${money(rp.received)}</span></div>
+        <div class="fr"><span>－ 付出費用</span><span class="v">${money(rp.expense)}</span></div>
+        <p class="fnote">介紹費，以借款日歸月</p>
+        <div class="fr eq"><span>＝ 淨收入</span>
+          <span class="v ${rp.net > 0 ? 'green' : rp.net < 0 ? 'red' : ''}">${money(rp.net)}</span></div>
+      </div>
     </div>
     ${expiredRows ? `<p class="section-h" style="color:var(--red)">到期還沒收的</p><div class="rowlist">${expiredRows}</div>` : ''}
     ${notYetRows ? `<p class="section-h">尚未到期</p><div class="rowlist">${notYetRows}</div>` : ''}
@@ -791,7 +793,7 @@ function statsOverview(now) {
     </div>`;
   }).join('');
 
-  const fees = st.referralTotal + st.appraisalTotal;
+  const fees = st.referralTotal;
   return `
     ${principalHtml}
     <div class="card">
@@ -803,7 +805,7 @@ function statsOverview(now) {
       <div class="formula">
         <div class="fr"><span>已收利息</span><span class="v green">${money(st.received)}</span></div>
         <div class="fr"><span>－ 付出費用</span><span class="v">${money(fees)}</span></div>
-        <p class="fnote">介紹費 ${money(st.referralTotal)} ＋ 代書費 ${money(st.appraisalTotal)}</p>
+        <p class="fnote">介紹費，成交時一次性；代書費由客戶負擔不列入</p>
         <div class="fr eq"><span>＝ 淨收入</span><span class="v green">${money(st.net)}</span></div>
         ${st.writeoffTotal ? `<div class="fr"><span>壞帳沖銷</span><span class="v red">${money(st.writeoffTotal)}</span></div>` : ''}
         <p class="fnote">今年已收利息 ${money(st.yearReceived)}</p>
@@ -971,7 +973,7 @@ function render() {
   renderTabbar();
   if (route.view === 'form') {
     refreshFormCalc();
-    for (const id of ['f-principal', 'f-rate', 'f-appraisal']) {
+    for (const id of ['f-principal', 'f-rate']) {
       document.getElementById(id).addEventListener('input', refreshFormCalc);
     }
     document.getElementById('f-prepaid').addEventListener('change', refreshFormCalc);

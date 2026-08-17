@@ -69,7 +69,8 @@ assert.equal(st.overdueTotal, 404000);
 assert.equal(st.problemCount, 1);
 assert.equal(st.writeoffTotal, 50000);
 assert.equal(st.referralTotal, 5000 + 2700 + 5000 + 5000);
-assert.equal(st.net, 25400 - st.referralTotal - st.appraisalTotal);
+assert.equal(st.net, 25400 - st.referralTotal);   // 代書費已退役，不再是成本
+assert.equal(st.appraisalTotal, undefined, '代書費統計欄位不得存在');
 
 // 月序列
 const series = monthlySeries(pays, parseDate('2026-08-04'), 3);
