@@ -69,6 +69,8 @@ assert.equal(withOld.net, withOld.received - withOld.referralTotal, '總覽淨�
   const app = readFileSync(new URL('../docs/js/app.js', import.meta.url), 'utf8');
   const xio = readFileSync(new URL('../docs/js/xlsx-io.js', import.meta.url), 'utf8');
   assert.ok(!app.includes('appraisal'), 'app 無代書費程式');
+  assert.ok(!app.includes('代書'), 'app 可見文案零代書費殘留');
+  assert.ok(/st\.net > 0 \? 'green' : st\.net < 0 \? 'red'/.test(app), '總覽淨收入條件式顏色');
   assert.ok(!app.includes('DEFAULT_APPRAISAL'), '預設常數已刪');
   assert.ok(app.includes('本月損益') && app.includes('以借款日歸月'), '月報含損益公式');
   assert.ok(app.includes('已結清的帳只能改姓名、介紹費、備註'), '鎖定文案更新');

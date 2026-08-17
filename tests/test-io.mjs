@@ -86,5 +86,20 @@ const rb = parseXlsx(badBuf);
 assert.equal(rb.ok, false);
 assert.ok(rb.errors.length >= 5, rb.errors.join('|'));
 
+// 舊版 Excel 帶「代書費」欄：照常匯入、不建立 appraisalFee、不報錯
+{
+  const wbOld = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbOld, XLSX.utils.json_to_sheet([{
+    '編號': 'old1', '姓名': '舊格式', '本金': 100000, '月利率%': 2,
+    '借款日期': '2026-01-05', '收息日': 5, '狀態': '正常', '代書費': 3000,
+  }]), '借款主表');
+  const oldBuf = XLSX.write(wbOld, { type: 'array', bookType: 'xlsx' });
+  const ro = parseXlsx(oldBuf);
+  assert.equal(ro.ok, true, JSON.stringify(ro.errors));
+  const ol = ro.state.loans[0];
+  assert.equal(ol.name, '舊格式');
+  assert.ok(!('appraisalFee' in ol), '舊代書費欄被忽略，不建立欄位');
+}
+
 fs.unlinkSync(file);
 console.log('ics + xlsx 全部通過');

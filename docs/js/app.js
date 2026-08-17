@@ -805,8 +805,9 @@ function statsOverview(now) {
       <div class="formula">
         <div class="fr"><span>已收利息</span><span class="v green">${money(st.received)}</span></div>
         <div class="fr"><span>－ 付出費用</span><span class="v">${money(fees)}</span></div>
-        <p class="fnote">介紹費，成交時一次性；代書費由客戶負擔不列入</p>
-        <div class="fr eq"><span>＝ 淨收入</span><span class="v green">${money(st.net)}</span></div>
+        <p class="fnote">介紹費，成交時一次性</p>
+        <div class="fr eq"><span>＝ 淨收入</span>
+          <span class="v ${st.net > 0 ? 'green' : st.net < 0 ? 'red' : ''}">${money(st.net)}</span></div>
         ${st.writeoffTotal ? `<div class="fr"><span>壞帳沖銷</span><span class="v red">${money(st.writeoffTotal)}</span></div>` : ''}
         <p class="fnote">今年已收利息 ${money(st.yearReceived)}</p>
       </div>
