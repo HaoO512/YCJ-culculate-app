@@ -247,11 +247,23 @@ export function upcomingDues(state, now, count = 3, excludeIds = null) {
 // → 跳過已收齊期 → 回傳最早未收齊的期；永不早於借款日；29–31/月底沿用 dueDateFor
 export function nextUnsettledPeriod(state, loan, now) {
   let d = nextCollectDue(loan, parseDate(loan.startDate));
+  // 循環上限依資料量計算，不用任意常數：
+  // 已收齊的月份數 ≤ 該借款收款筆數 + 預收月數，所以走完這個數一定碰到未收齊期
+  const maxSteps = state.payments.filter(p => p.loanId === loan.id).length + (loan.prepaidMonths || 0) + 2;
   let guard = 0;
-  while (guard++ < 60 && settledInMonth(state.payments, loan, d.getFullYear(), d.getMonth())) {
+  while (guard++ < maxSteps && settledInMonth(state.payments, loan, d.getFullYear(), d.getMonth())) {
     d = dueDateFor(d.getFullYear(), d.getMonth() + 1, loan.dueDay);
   }
   return d;
+}
+
+// 正式的收款草稿：receive() 與測試共用同一份規則，不允許各寫一套
+// 回傳 {date, dueDate, amount}；該期已收齊回傳 null
+export function nextPaymentDraft(state, loan, now) {
+  const due = nextUnsettledPeriod(state, loan, now);
+  const amount = monthlyInterest(loan) - monthPaidAmount(state.payments, loan.id, due.getFullYear(), due.getMonth());
+  if (amount <= 0) return null;
+  return { date: fmtDate(now), dueDate: fmtDate(due), amount };
 }
 
 // 單筆借款：過了收息日還沒收齊的期，各期附「剩餘該補的金額」（部分款已扣）

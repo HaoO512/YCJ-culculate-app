@@ -99,9 +99,9 @@ function settled(state, loan, y, m) {
   return cmpYMD([y, m, dueDayOf(y, m, loan.dueDay)], pu) <= 0;
 }
 
-// 算出今天要發的提醒
-function buildReminders(state) {
-  const { y, m, d } = taipeiToday();
+// 算出今天要發的提醒（t 可注入供測試；預設台北今天）
+export function buildReminders(state, t = taipeiToday()) {
+  const { y, m, d } = t;
   const tm = new Date(Date.UTC(y, m, d + 1));
   const tY = tm.getUTCFullYear(), tM = tm.getUTCMonth(), tD = tm.getUTCDate();
   const msgs = [];

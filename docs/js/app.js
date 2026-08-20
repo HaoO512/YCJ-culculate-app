@@ -5,7 +5,7 @@ import {
   dueDateFor, nextDue, overduePeriods, overdueInterest, paidInMonth, monthPaidAmount,
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
-  upcomingDues, missedDues, missedPeriods, mergeTombstones, nextUnsettledPeriod,
+  upcomingDues, missedDues, missedPeriods, mergeTombstones, nextUnsettledPeriod, nextPaymentDraft,
 } from './calc.js';
 import { downloadICS, downloadStopAllICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
@@ -323,9 +323,12 @@ function viewDetail() {
     const pu0 = prepaidUntil(l);
     return !!(pu0 && dueDateFor(now.getFullYear(), now.getMonth(), l.dueDay) <= pu0);
   })();
+  // 首期還沒到（從沒有任何一期到期過）：不能說「已收」
+  const neverDue = nextCollectDue(l, parseDate(l.startDate)) > now;
   let nextTxt;
   if (lateDays > 0) nextTxt = `${mdTxt(pending)} 待收，晚 ${lateDays} 天`;
   else if (lateDays === 0) nextTxt = `${mdTxt(pending)} 待收（今天）`;
+  else if (neverDue) nextTxt = `尚未到期，首次收款 ${mdTxt(pending)}`;
   else nextTxt = `本期已收，下次 ${pending.getTime() === tomorrow.getTime() ? '明天 ' : ''}${mdTxt(pending)}`;
   const pu = prepaidUntil(l);
 
@@ -365,7 +368,10 @@ function viewDetail() {
       const dueNow = lateDays >= 0;   // 本期到期未收（含晚繳）
       primary = `
         <button class="btn green" data-action="receive" data-id="${l.id}" ${dueNow ? '' : 'disabled'}>
-          ${dueNow ? '記本期收款' : byPrepaid ? '✓ 預收涵蓋中' : '✓ 本期已收'}
+          ${dueNow ? '記本期收款'
+            : byPrepaid ? '✓ 預收涵蓋中'
+            : neverDue ? `尚未到期（首次收款 ${pending.getMonth() + 1}/${pending.getDate()}）`
+            : '✓ 本期已收'}
         </button>
         ${dueNow && lateDays > 0 ? `<button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>` : ''}
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正借款資料</button>`;
@@ -1032,32 +1038,23 @@ const actions = {
   async receive(el) {
     const l = loanById(el.dataset.id);
     if (!l || l.status !== 'normal') { render(); return; }
-    // 選期不信畫面：以「最早尚未收齊的期」為準（晚繳跨月也記回正確期別）
-    const now0 = today();
-    const due0 = nextUnsettledPeriod(state, l, now0);
-    const mi = monthlyInterest(l);
-    const paid0 = monthPaidAmount(state.payments, l.id, due0.getFullYear(), due0.getMonth());
-    const remaining0 = mi - paid0;
-    if (remaining0 <= 0) { render(); return; }
+    // 選期不信畫面：草稿由 nextPaymentDraft 統一產生（與測試同一份規則）
+    const draft0 = nextPaymentDraft(state, l, today());
+    if (!draft0) { render(); return; }
+    const partial = monthlyInterest(l) - draft0.amount;
     const ok = await confirmPanel({
       title: '記下這期收款？',
-      lines: [l.name, money(remaining0),
-        { sub: `實收日：${mdTxt(now0)}` },
-        { sub: `歸屬期：${mdTxt(due0)}` },
-        ...(paid0 > 0 ? [{ sub: `此期已記 ${money(paid0)}，此筆為剩餘` }] : [])],
+      lines: [l.name, money(draft0.amount),
+        { sub: `實收日：${mdTxt(parseDate(draft0.date))}` },
+        { sub: `歸屬期：${mdTxt(parseDate(draft0.dueDate))}` },
+        ...(partial > 0 ? [{ sub: `此期已記 ${money(partial)}，此筆為剩餘` }] : [])],
       ok: '記下收款',
     });
     if (!ok) return;
     // 確認後重算：背景跨日、舊畫面按鈕都不能寫錯期
-    const now1 = today();
-    const due1 = nextUnsettledPeriod(state, l, now1);
-    const amt = monthlyInterest(l) - monthPaidAmount(state.payments, l.id, due1.getFullYear(), due1.getMonth());
-    if (amt <= 0) { render(); return; }
-    state.payments.push({
-      id: newId(), loanId: l.id, date: fmtDate(now1),
-      dueDate: fmtDate(due1),
-      amount: amt,
-    });
+    const draft1 = nextPaymentDraft(state, l, today());
+    if (!draft1) { render(); return; }
+    state.payments.push({ id: newId(), loanId: l.id, ...draft1 });
     commit();
   },
   async 'receive-missed'(el) {
