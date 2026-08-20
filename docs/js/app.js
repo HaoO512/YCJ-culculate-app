@@ -323,12 +323,17 @@ function viewDetail() {
     const pu0 = prepaidUntil(l);
     return !!(pu0 && dueDateFor(now.getFullYear(), now.getMonth(), l.dueDay) <= pu0);
   })();
-  // 首期還沒到（從沒有任何一期到期過）：不能說「已收」
-  const neverDue = nextCollectDue(l, parseDate(l.startDate)) > now;
+  // 語意鏈與按鈕一致：1 到期待收 → 2 預收涵蓋 → 3 預收結束/真正從未到期 → 4 本期已收
+  const hasPrepaid = (l.prepaidMonths || 0) > 0;
+  const firstCollectFuture = nextCollectDue(l, parseDate(l.startDate)) > now;   // 沒有任何一期到期過
+  const neverDue = !hasPrepaid && firstCollectFuture;   // 真正的「首次收款」：無預收才成立（簽約收過預收就不能叫首次）
   let nextTxt;
   if (lateDays > 0) nextTxt = `${mdTxt(pending)} 待收，晚 ${lateDays} 天`;
   else if (lateDays === 0) nextTxt = `${mdTxt(pending)} 待收（今天）`;
-  else if (neverDue) nextTxt = `尚未到期，首次收款 ${mdTxt(pending)}`;
+  else if (byPrepaid) nextTxt = `預收涵蓋中，下次收款 ${mdTxt(pending)}`;
+  else if (firstCollectFuture) nextTxt = hasPrepaid
+    ? `預收已結束，下次收款 ${mdTxt(pending)}`
+    : `尚未到期，首次收款 ${mdTxt(pending)}`;
   else nextTxt = `本期已收，下次 ${pending.getTime() === tomorrow.getTime() ? '明天 ' : ''}${mdTxt(pending)}`;
   const pu = prepaidUntil(l);
 
@@ -370,7 +375,9 @@ function viewDetail() {
         <button class="btn green" data-action="receive" data-id="${l.id}" ${dueNow ? '' : 'disabled'}>
           ${dueNow ? '記本期收款'
             : byPrepaid ? '✓ 預收涵蓋中'
-            : neverDue ? `尚未到期（首次收款 ${pending.getMonth() + 1}/${pending.getDate()}）`
+            : firstCollectFuture ? (hasPrepaid
+                ? `預收已結束（下次 ${pending.getMonth() + 1}/${pending.getDate()}）`
+                : `尚未到期（首次收款 ${pending.getMonth() + 1}/${pending.getDate()}）`)
             : '✓ 本期已收'}
         </button>
         ${dueNow && lateDays > 0 ? `<button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>` : ''}

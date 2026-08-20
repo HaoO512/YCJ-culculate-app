@@ -36,10 +36,10 @@ const state = {
   assert.equal(buildReminders(st2, { y: 2026, m: 8, d: 29 }).length, 0, '收齊即不提醒');
 }
 
-// 8/31 期在 9/2 補收後，9/2 當下不得誤發 8 月提醒（該期已收齊）
+// 非收息日不提醒（9/2 既非今天也非明天到期；收清判斷由 9/29 案例負責）
 {
   const msgs = buildReminders(state, { y: 2026, m: 8, d: 2 });
-  assert.equal(msgs.length, 0, '補收完成的期不再提醒');
+  assert.equal(msgs.length, 0, '非收息日不提醒');
 }
 
 // 借款日之前不提醒（防呆迴歸）

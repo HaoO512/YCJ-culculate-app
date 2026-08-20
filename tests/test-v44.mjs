@@ -107,6 +107,16 @@ function apply(state, loan, now) {
   assert.ok(js.includes('實收日：') && js.includes('歸屬期：'), '確認面板同列實收日與歸屬期');
   assert.ok(js.includes('待收，晚') && js.includes('本期已收，下次'), '晚繳語意');
   assert.ok(js.includes('neverDue') && js.includes('尚未到期') && js.includes('首次收款'), '首期未到不得顯示已收');
+  // 預收語意鏈：涵蓋中/已結束/首次收款三態分開，且判斷順序與按鈕一致
+  assert.ok(js.includes('預收涵蓋中，下次收款'), '預收帳 Hero 不得稱首次收款');
+  assert.ok(js.includes('預收已結束，下次收款'), '預收結束與一般尚未到期分開');
+  assert.ok(js.includes('!hasPrepaid && firstCollectFuture'), '首次收款僅限無預收');
+  {
+    const start = js.indexOf('let nextTxt');
+    const chain = js.slice(start, js.indexOf('const pu = prepaidUntil', start));
+    const order = ['待收，晚', 'byPrepaid', 'firstCollectFuture', '本期已收'].map(s => chain.indexOf(s));
+    assert.ok(order.every((v, i) => v >= 0 && (i === 0 || v > order[i - 1])), 'Hero 判斷順序：待收→預收→未到期→已收');
+  }
   assert.ok(js.includes('missedList.length >= 2'), '兩期以上才叫補繳');
   assert.ok(/html, body \{ height: 100%; overflow: hidden; \}/.test(css), '外殼固定');
   assert.ok(/#view \{[\s\S]{0,200}overscroll-behavior-y: contain/.test(css), '捲動只在 #view');
