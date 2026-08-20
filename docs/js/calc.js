@@ -242,6 +242,18 @@ export function upcomingDues(state, now, count = 3, excludeIds = null) {
   return out.sort((a, b) => a.date - b.date).slice(0, count);
 }
 
+// 最早「尚未收齊」的期別：收款動作唯一的選期依據
+// 規則：從第一個有效收息期開始（簽約日當期起算）→ 跳過預收涵蓋期（nextCollectDue 內建）
+// → 跳過已收齊期 → 回傳最早未收齊的期；永不早於借款日；29–31/月底沿用 dueDateFor
+export function nextUnsettledPeriod(state, loan, now) {
+  let d = nextCollectDue(loan, parseDate(loan.startDate));
+  let guard = 0;
+  while (guard++ < 60 && settledInMonth(state.payments, loan, d.getFullYear(), d.getMonth())) {
+    d = dueDateFor(d.getFullYear(), d.getMonth() + 1, loan.dueDay);
+  }
+  return d;
+}
+
 // 單筆借款：過了收息日還沒收齊的期，各期附「剩餘該補的金額」（部分款已扣）
 export function missedPeriods(state, loan, now) {
   const out = [];

@@ -34,12 +34,12 @@ assert.ok(js.includes('function confirmPanel'), '自製確認面板');
 assert.ok(js.includes(`querySelector('[data-p="no"]').focus()`), '預設焦點在取消');
 assert.ok(js.includes('pdanger'), '危險動作紅色樣式');
 assert.ok(!/[^.\w]confirm\(/.test(js.replace(/confirmPanel/g, 'CP')), '系統 confirm 已全數移除');
-for (const t of ['記下本月收款？', '刪除錯帳？', '確認結清？', '進入法院？', '刪除收款']) {
+for (const t of ['記下這期收款？', '刪除錯帳？', '確認結清？', '進入法院？', '刪除收款']) {
   assert.ok(js.includes(t), `確認面板文案：${t}`);
 }
 
 // ── 二、按鈕短文案：新有、舊無 ──
-for (const t of ['記本月收款', '記補繳（', '標記欠繳', '更正借款資料', '本金已還清',
+for (const t of ['記本期收款', '記補繳（', '標記欠繳', '更正借款資料', '本金已還清',
   '刪除錯帳', '退回欠繳', '撤銷結清', '改基本資料']) {
   assert.ok(js.includes(t), `新文案：${t}`);
 }

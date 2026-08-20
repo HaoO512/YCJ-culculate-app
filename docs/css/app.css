@@ -16,6 +16,8 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* 固定 App 外殼：捲動只發生在 #view 內，底部導覽不再依賴 iOS 的 position:fixed */
+html, body { height: 100%; overflow: hidden; }
 html { -webkit-text-size-adjust: 100%; }
 /* 防誤觸：主要互動區關掉雙擊縮放手勢，保留正常捲動 */
 button, select, input, textarea, summary, .day, .slim, .tab, .person-row { touch-action: manipulation; }
@@ -30,11 +32,16 @@ body {
 }
 
 #app {
-  max-width: 520px; margin: 0 auto; min-height: 100dvh;
+  max-width: 520px; margin: 0 auto; height: 100dvh;
+  overflow: hidden;
   display: flex; flex-direction: column;
 }
 #view {
-  flex: 1; padding: 14px 16px calc(96px + env(safe-area-inset-bottom));
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px 24px;
   display: flex; flex-direction: column; gap: 14px;
 }
 
@@ -359,8 +366,7 @@ details.acc .acc-body { padding: 0 16px 16px; display: flex; flex-direction: col
 
 /* 底部分頁 */
 #tabbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-  max-width: 520px; margin: 0 auto;
+  position: static; flex: none;
   display: flex; border-top: 1px solid var(--line); background: var(--card);
   padding: 8px 6px calc(10px + env(safe-area-inset-bottom));
 }
@@ -407,3 +413,4 @@ textarea:focus-visible, summary:focus-visible {
   .btn:active { transform: none; }
 }
 .sic svg { width: 24px; height: 24px; stroke: var(--sub); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hero-amt .when.late { color: var(--red); }
