@@ -73,7 +73,7 @@ assert.equal(withOld.net, withOld.received - withOld.referralTotal, '總覽淨�
   assert.ok(/st\.net > 0 \? 'green' : st\.net < 0 \? 'red'/.test(app), '總覽淨收入條件式顏色');
   assert.ok(!app.includes('DEFAULT_APPRAISAL'), '預設常數已刪');
   assert.ok(app.includes('本月損益') && app.includes('以借款日歸月'), '月報含損益公式');
-  assert.ok(app.includes('已結清的帳只能改姓名、介紹費、備註'), '鎖定文案更新');
+  assert.ok(!app.includes('已結清的帳只能改姓名、介紹費、備註'), '已結清鎖定文案已隨結案封存退役（v49）');
   assert.ok(!xio.includes('代書費'), 'Excel 匯出入無代書費欄');
   assert.ok(xio.includes('系統資料'), '墓碑表維持不變');
 }

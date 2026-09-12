@@ -31,4 +31,5 @@
 - 提醒：系統推播是預設提醒方式（前一天與當天 09:30）。行事曆匯出僅為手動選用功能，任何記帳、編輯或狀態變更都不會自動下載行事曆檔
 - 金鑰：統計頁「顯示同步金鑰」，換手機輸入金鑰即可取回全部資料
 - 部署後端：`cd worker && npx wrangler deploy`
-- 測試：`node tests/test-calc.mjs`、`tests/test-prepaid.mjs`、`tests/test-io.mjs`……；`tests/test-v48.mjs` 會用本機 Chrome／Edge headless 實跑 App（捲動、觸控、刪除流程；零套件依賴，找不到瀏覽器可設 `CHROME_PATH`）
+- 測試：`node tests/test-calc.mjs`、`tests/test-prepaid.mjs`、`tests/test-io.mjs`……；`tests/test-v48.mjs`、`tests/test-v49.mjs` 會用本機 Chrome／Edge headless 實跑 App（捲動、觸控、結案刪除、雲端同步攔截、Excel 匯入；零套件依賴，找不到瀏覽器可設 `CHROME_PATH`）
+- 救援資料（v49）：結案刪除的借款連同收款封存在 `state.deletedRecords`（手機與雲端明文都有；Excel 的「系統救援_借款／收款」表也帶著）。App 不提供還原，一般 Excel 匯入也不能把已封存的 ID 復活。要復原只能由管理者用專用工具：直接編輯雲端 JSON（把該筆從 `deletedRecords` 搬回 `loans`／`payments`、`updatedAt` 改成現在），再到手機「設定 → 同步金鑰 → 輸入金鑰連線」重新拉取（此路徑不會把手機既有封存合併回去；一般開機同步則以封存為準、不會復活）

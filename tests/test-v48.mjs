@@ -1,4 +1,5 @@
-// v48：借款頁捲動修正（.plist 不被 flex 壓縮）＋一般清帳退役（只剩「刪除借款」）
+// v48：借款頁捲動修正（.plist 不被 flex 壓縮）＋一般清帳退役（只剩刪除）
+// （v49 起刪除改為「結案刪除借款」並封存到 deletedRecords；本檔的刪除斷言已同步）
 // 前半：來源層與純函式；後半：真實 Chrome/Edge headless 跑 App（tests/helpers/cdp.mjs，零依賴）
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  today, fmtDate, dueDateFor, monthlyInterest, monthReport, stats,
+  today, fmtDate, dueDateFor, monthlyInterest, monthReport, stats, migrateLegacyClosed,
 } from '../docs/js/calc.js';
 import { validateState } from '../worker/src/index.js';
 import { launch, serveStatic } from './helpers/cdp.mjs';
@@ -67,11 +68,11 @@ function fixture() {
   for (const t of ['本金已還清', '確認結清？', '還有欠息沒處理', '欠息已收', '刪除錯帳', '只用於誤建']) {
     assert.ok(!js.includes(t), `一般清帳文案已退役：${t}`);
   }
-  // 8：正常（漏收／一般）、欠繳、法院、結案五種詳情各只有一顆「刪除借款」，且放在更多操作
+  // 8：正常（漏收／一般）、欠繳、法院四種詳情各只有一顆「結案刪除借款」，且放在更多操作（v49：已結清不再是畫面狀態）
   const detail = js.slice(js.indexOf('function viewDetail'), js.indexOf('function viewForm'));
-  const delBtns = detail.match(/data-action="delete-loan"[^>]*>刪除借款<\/button>/g) || [];
-  assert.equal(delBtns.length, 5, '五種狀態各一顆刪除借款');
-  assert.equal((detail.match(/data-action="delete-loan"/g) || []).length, 5, '沒有其他刪除入口');
+  const delBtns = detail.match(/data-action="delete-loan"[^>]*>結案刪除借款<\/button>/g) || [];
+  assert.equal(delBtns.length, 4, '四種狀態各一顆結案刪除借款');
+  assert.equal((detail.match(/data-action="delete-loan"/g) || []).length, 4, '沒有其他刪除入口');
   for (const seg of detail.split('more = `').slice(1)) {
     assert.ok(seg.slice(0, seg.indexOf('`;')).includes('data-action="delete-loan"'), '刪除借款只在「更多操作」內');
   }
@@ -80,18 +81,15 @@ function fixture() {
     assert.ok(!body.includes('delete-loan'), '刪除借款不得成為主按鈕');
   }
   // 刪除面板文案
-  for (const t of ['刪除這筆借款？', '會一起刪除 ${pays.length} 筆收款，共 ${money(total)}',
-    '過去月報、總覽及 Excel 統計都會重新計算', "ok: '確認刪除', danger: true"]) {
+  for (const t of ['結案並刪除這筆借款？', '將移除 ${pays.length} 筆收款，共 ${money(total)}',
+    'App、月報、總覽及一般 Excel 將不再顯示', '完整資料會保留供救援', "ok: '結案刪除借款', danger: true"]) {
     assert.ok(js.includes(t), `刪除面板：${t}`);
   }
-  assert.ok(js.includes('toast(`已刪除『${l.name}』`)'), '刪除後短訊息');
+  assert.ok(js.includes('toast(`「${l.name}」已結案刪除`)'), '刪除後短訊息');
   assert.ok(!js.includes('x.sub || x'), 'confirmPanel 不得用 x.sub 判斷字串（String.prototype.sub 會把姓名印成 function）');
-  assert.ok(js.includes('if (!loanById(l.id)) return;'), '確認後再驗證借款仍在：不重複執行');
-  // 借款頁分頁改名，避免誤認仍有一般清帳
-  assert.ok(js.includes('結案紀錄 ${closed.length}') && !js.includes('已結清 ${closed.length}'), '「已結清」分頁改「結案紀錄」');
-  assert.ok(js.includes('借款 → 結案紀錄'), '開機提示同步改名');
-  // 法院結案流程維持
-  assert.ok(js.includes("'settle-legal'") && js.includes("l.status = 'closed'") && js.includes('壞帳沖銷 ${money(wo)}'), '法院結案仍可產生 closed');
+  assert.ok(js.includes('if (!next) return;'), '確認後 archiveAndDeleteLoan 回 null 即不重複執行');
+  // 法院結案流程維持（v49：結案後整筆封存移除）
+  assert.ok(js.includes("'settle-legal'") && js.includes("'legal-settled'") && js.includes('壞帳沖銷 ${money(wo)}'), '法院結案仍在，改為封存');
   // closed 保留為相容層：本機、Worker、Excel 三處驗證都仍接受
   assert.ok(storeSrc.includes("['normal', 'overdue', 'legal', 'closed']"), 'store.js 仍接受 closed');
   assert.ok(workerSrc.includes("['normal', 'overdue', 'legal', 'closed']"), 'Worker 仍接受 closed');
@@ -108,7 +106,6 @@ function fixture() {
   assert.ok(view.includes('overflow-y: auto') && view.includes('min-height: 0') && view.includes('flex: 1'), '#view 仍是捲動殼');
   assert.ok(/#tabbar \{[^}]*position: static/.test(css), '底部導覽維持 static');
   assert.ok(css.includes('html, body { height: 100%; overflow: hidden; }'), 'body 不捲動');
-  assert.ok(js.includes("'people-tab'(el) { peopleTab = el.dataset.tab; render(); $view.scrollTop = 0; }"), '切換進行中／結案紀錄回頂');
 }
 
 // ───────────────── 二、純函式：舊 closed 資料仍通過本機、Worker、Excel 驗證 ─────────────────
@@ -122,7 +119,8 @@ const fx = fixture();
   const { load } = await import('../docs/js/store.js');
   mem.set('loanapp.v1', JSON.stringify(fx));
   const loaded = load();
-  assert.equal(loaded.loans.length, fx.loans.length, '本機驗證接受舊 closed（含無結清日）');
+  assert.equal(loaded.loans.length, fx.loans.length - 2, '本機驗證接受舊 closed（含無結清日），並遷移進封存');
+  assert.equal((loaded.deletedRecords || []).length, 2, '兩筆舊 closed 進 deletedRecords');
   assert.ok(!mem.has('loanapp.v1.corrupt'), '未被判定為壞資料');
   // 14c：Excel 匯出 → 匯入
   const require = createRequire(import.meta.url);
@@ -208,7 +206,7 @@ try {
     for (const [k, pt] of Object.entries(spots)) {
       await page.eval(`document.getElementById('view').scrollTop = 0`);
       await page.touchScroll(pt.x, pt.y, 220);
-      const r = await page.eval(`({ st: document.getElementById('view').scrollTop, people: !!document.querySelector('.seg [data-tab="running"]'), detail: !!document.querySelector('.backrow') })`);
+      const r = await page.eval(`({ st: document.getElementById('view').scrollTop, people: !!document.querySelector('.plist'), detail: !!document.querySelector('.backrow') })`);
       assert.ok(r.st > 50, `${width}px 從「${k}」拖動可捲動（scrollTop=${r.st}）`);
       assert.ok(r.people && !r.detail, `${width}px 從「${k}」拖動不誤開詳情`);
     }
@@ -223,20 +221,16 @@ try {
   }
   await page.mobile(375, 667);
 
-  // 切換分頁回頂
+  // v49：借款頁沒有分頁；切頁回頂
+  assert.ok(await page.eval(`!document.querySelector('#view .seg')`), '借款頁無分段切換');
   await page.eval(`document.getElementById('view').scrollTop = 1e6`);
-  await page.click('.seg [data-tab="closed"]');
-  assert.equal(await page.eval(`document.getElementById('view').scrollTop`), 0, '切到結案紀錄回頂');
-  assert.ok((await page.eval(`document.querySelector('.seg [data-tab="closed"]').textContent`)).includes('結案紀錄 2'), '結案紀錄分頁顯示 2 筆舊 closed');
-  await page.click('.seg [data-tab="running"]');
-  await page.eval(`document.getElementById('view').scrollTop = 1e6`);
-  await page.click('.seg [data-tab="running"]');
-  assert.equal(await page.eval(`document.getElementById('view').scrollTop`), 0, '切回進行中回頂');
+  await page.click('.tab[data-view="home"]');
+  await page.click('.tab[data-view="people"]');
+  assert.equal(await page.eval(`document.getElementById('view').scrollTop`), 0, '切頁回頂');
 
-  // 8：五種狀態詳情，更多操作只有一顆「刪除借款」
+  // 8：四種進行中狀態詳情，更多操作只有一顆「結案刪除借款」
   const moreOf = async id => {
     await page.click('.tab[data-view="people"]');
-    await page.click(`.seg [data-tab="${id === 'cls1' ? 'closed' : 'running'}"]`);
     await page.click(`.prow[data-id="${id}"]`);
     await page.waitFor('.backrow');
     return page.eval(`(() => {
@@ -250,9 +244,9 @@ try {
       };
     })()`);
   };
-  for (const id of [DEL_ID, 'miss1', 'ovd1', 'leg1', 'cls1']) {
+  for (const id of [DEL_ID, 'miss1', 'ovd1', 'leg1']) {
     const r = await moreOf(id);
-    assert.deepEqual(r.del, ['刪除借款'], `${id}：更多操作只有一顆刪除借款`);
+    assert.deepEqual(r.del, ['結案刪除借款'], `${id}：更多操作只有一顆結案刪除借款`);
     assert.equal(r.closeNormal, 0, `${id}：無本金已還清`);
     assert.equal(r.primaryDel, 0, `${id}：刪除不在主按鈕區`);
     assert.ok(!r.text.includes('本金已還清') && !r.text.includes('刪除錯帳'), `${id}：舊文案不出現`);
@@ -271,9 +265,9 @@ try {
       ok: p.querySelector('[data-p="ok"]').textContent, okDanger: p.querySelector('[data-p="ok"]').classList.contains('pdanger'),
       no: p.querySelector('[data-p="no"]').textContent, focusNo: document.activeElement === p.querySelector('[data-p="no"]') };
   })()`);
-  assert.equal(panel.title, '刪除這筆借款？');
-  assert.deepEqual(panel.lines, [DEL_NAME, '會一起刪除 3 筆收款，共 $39,000', '過去月報、總覽及 Excel 統計都會重新計算']);
-  assert.equal(panel.ok, '確認刪除'); assert.ok(panel.okDanger, '確認刪除為紅色');
+  assert.equal(panel.title, '結案並刪除這筆借款？');
+  assert.deepEqual(panel.lines, [DEL_NAME, '將移除 3 筆收款，共 $39,000', 'App、月報、總覽及一般 Excel 將不再顯示', '完整資料會保留供救援']);
+  assert.equal(panel.ok, '結案刪除借款'); assert.ok(panel.okDanger, '結案刪除為紅色');
   assert.equal(panel.no, '取消'); assert.ok(panel.focusNo, '預設焦點在取消');
   // 面板期間再按一次刪除鈕：不得疊出第二個面板
   await page.eval(`document.querySelector('[data-action="delete-loan"]').click()`);
@@ -291,17 +285,18 @@ try {
   await page.eval(`(() => { const b = document.querySelector('.ov [data-p="ok"]'); b.click(); b.click(); })()`);
   await page.waitGone('.ov');
   await page.waitFor('.toast');
-  assert.equal(await page.eval(`document.querySelector('.toast').textContent`), `已刪除『${DEL_NAME}』`, '短訊息');
-  assert.ok(await page.eval(`!!document.querySelector('.seg [data-tab="running"]') && !document.querySelector('.backrow')`), '刪除後回借款頁');
+  assert.equal(await page.eval(`document.querySelector('.toast').textContent`), `「${DEL_NAME}」已結案刪除`, '短訊息');
+  assert.ok(await page.eval(`!!document.querySelector('.plist') && !document.querySelector('.backrow')`), '刪除後回借款頁');
   stateAfterDelete = JSON.parse(await page.eval(`localStorage.getItem('loanapp.v1')`));
-  assert.equal(stateAfterDelete.loans.length, fx.loans.length - 1, '只刪一筆借款');
+  assert.equal(stateAfterDelete.loans.length, fx.loans.length - 3, '只刪一筆借款（另兩筆舊 closed 已於載入時封存）');
+  assert.equal(stateAfterDelete.deletedRecords.filter(r => r.loan.id === DEL_ID).length, 1, '封存只有一份');
   assert.ok(!stateAfterDelete.loans.some(l => l.id === DEL_ID), '借款消失');
   assert.equal(stateAfterDelete.payments.filter(p => p.loanId === DEL_ID).length, 0, '三筆收款全數消失');
-  assert.equal(stateAfterDelete.payments.length, fx.payments.length - 3, '其他收款不受影響');
+  assert.equal(stateAfterDelete.payments.length, fx.payments.length - 3 - 1, '其他收款不受影響（-1 為舊 closed 戊的收款隨遷移封存）');
   assert.deepEqual(stateAfterDelete.tombstones.filter(t => t.id === DEL_ID),
     [{ id: DEL_ID, name: DEL_NAME, dueDay: 10, startDate: due(-4, 10) }], '墓碑保留且不重複');
-  assert.equal(stateAfterDelete.tombstones.length, 2, '原有墓碑保留');
-  assert.ok(!stateAfterDelete.loans.some(l => l.writeoff && l.id !== 'cls1'), '刪除不產生壞帳沖銷');
+  assert.equal(stateAfterDelete.tombstones.length, 4, '原有墓碑保留（＋兩筆舊 closed 遷移的墓碑）');
+  assert.ok(!stateAfterDelete.loans.some(l => l.writeoff), '刪除不產生壞帳沖銷');
   assert.equal(await page.eval(`document.querySelectorAll('.prow').length`), 23, '名單少一筆');
   assert.equal(page.dialogs.length, 0, '刪除全程不跳 alert');
 
@@ -334,7 +329,8 @@ try {
   const rp = monthReport(s, d.getFullYear(), d.getMonth(), now);
   assert.ok(!rp.payList.some(p => p.loanId === DEL_ID), '上月收款記錄無該帳');
   assert.ok(![...rp.unpaidRows, ...rp.notYetRows].some(r => r.loan.id === DEL_ID), '上月到期列無該帳');
-  const st0 = stats(fx, now), st1 = stats(s, now);
+  // 對照組：同一份資料先經 v49 遷移（舊 closed 已封存），只比較這次結案刪除的差額
+  const st0 = stats(migrateLegacyClosed(fx).state, now), st1 = stats(s, now);
   assert.equal(st1.received, st0.received - 39000, '總覽已收利息扣掉 39,000');
   assert.equal(st1.principalOut, st0.principalOut - 650000, '總覽本金扣掉 650,000');
   assert.equal(st1.referralTotal, st0.referralTotal - 6500, '介紹費隨帳消失');

@@ -325,6 +325,71 @@ export function mergeTombstones(current, imported, liveIds) {
   return [...map.values()].filter(t => !liveIds.has(t.id)).slice(-100);
 }
 
+// ───────── v49 結案封存（救援資料：只保存、不運算、不顯示） ─────────
+export const ARCHIVE_REASONS = ['closed', 'legal-settled', 'legacy-closed'];
+
+const clone = x => JSON.parse(JSON.stringify(x));
+
+// 結案刪除借款：單次原子操作，回傳完整的 nextState（原 state 不動）；借款不存在回傳 null
+// 1 借款原樣複製 2 全部收款複製 3 寫入／覆蓋 deletedRecords 4 更新行事曆墓碑 5 從正式區移除
+// deletedRecords 不裁切：容量由呼叫端在存檔前檢查並阻止，不得靜默丟最舊救援資料
+export function archiveAndDeleteLoan(state, loanId, reason, deletedAt = Date.now()) {
+  const loan = state.loans.find(l => l.id === loanId);
+  if (!loan) return null;
+  const record = {
+    deletedAt, reason,
+    loan: clone(loan),
+    payments: clone(state.payments.filter(p => p.loanId === loanId)),
+  };
+  const deletedRecords = [...(state.deletedRecords || []).filter(r => r.loan.id !== loanId), record];
+  const tombstones = [
+    ...(state.tombstones || []).filter(t => t.id !== loanId),
+    { id: loan.id, name: loan.name, dueDay: loan.dueDay, startDate: loan.startDate },
+  ].slice(-100);
+  return {
+    ...state,
+    loans: state.loans.filter(l => l.id !== loanId),
+    payments: state.payments.filter(p => p.loanId !== loanId),
+    tombstones, deletedRecords,
+  };
+}
+
+// 救援封存合併（雲端拉取／Excel 匯入）：依借款 ID 聯集，相同 ID 以較新的 deletedAt 為準；只增不減
+export function mergeDeletedRecords(current, imported) {
+  const map = new Map();
+  for (const r of current || []) map.set(r.loan.id, r);
+  for (const r of imported || []) {
+    const cur = map.get(r.loan.id);
+    if (!cur || (r.deletedAt || 0) >= (cur.deletedAt || 0)) map.set(r.loan.id, r);
+  }
+  return [...map.values()].sort((a, b) => (a.deletedAt || 0) - (b.deletedAt || 0));
+}
+
+// v49 遷移（本機載入／雲端拉取／快照復原／Excel 匯入都要過這一關）：
+// - 舊版 status='closed' 的借款連同收款搬入 deletedRecords（legacy-closed），原 closedDate／實收／沖銷原樣保留
+// - 正式區與封存區同 ID：一律以封存為準，正式區的複本（含收款）移出，舊裝置不能把帳復活
+// 冪等：沒東西要搬就回傳原 state、changed=false
+export function migrateLegacyClosed(state, now = Date.now()) {
+  const archived = new Set((state.deletedRecords || []).map(r => r.loan.id));
+  const toMove = state.loans.filter(l => l.status === 'closed' || archived.has(l.id));
+  if (!toMove.length) return { state, changed: false };
+  let next = state;
+  for (const l of toMove) {
+    if (archived.has(l.id)) {
+      next = {
+        ...next,
+        loans: next.loans.filter(x => x.id !== l.id),
+        payments: next.payments.filter(p => p.loanId !== l.id),
+        tombstones: [...(next.tombstones || []).filter(t => t.id !== l.id),
+          { id: l.id, name: l.name, dueDay: l.dueDay, startDate: l.startDate }].slice(-100),
+      };
+    } else {
+      next = archiveAndDeleteLoan(next, l.id, 'legacy-closed', now);
+    }
+  }
+  return { state: next, changed: true };
+}
+
 export function money(n) {
   const r = Math.round(n);
   return r < 0 ? '-$' + Math.abs(r).toLocaleString('en-US') : '$' + r.toLocaleString('en-US');

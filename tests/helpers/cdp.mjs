@@ -140,6 +140,44 @@ export class Page {
     await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('no ' + ${JSON.stringify(selector)}); el.click(); })()`);
     await sleep(40);
   }
+  // 攔截雲端 API（*.workers.dev）：不出網，交給 handler({method,url,body}) 決定回應 {status, body}
+  // 所有請求（含 CORS 預檢）都記在 page.cloudLog，測試可斷言上傳內容
+  async mockCloud(handler) {
+    this.cloudLog = [];
+    await this.send('Fetch.enable', { patterns: [{ urlPattern: '*workers.dev*', requestStage: 'Request' }] });
+    const cors = [
+      { name: 'access-control-allow-origin', value: '*' },
+      { name: 'access-control-allow-methods', value: 'GET,PUT,POST,OPTIONS' },
+      { name: 'access-control-allow-headers', value: 'content-type,x-key' },
+    ];
+    this.on('Fetch.requestPaused', async p => {
+      const req = p.request;
+      let body = null;
+      try { body = req.postData ? JSON.parse(req.postData) : null; } catch {}
+      const entry = { method: req.method, url: req.url, body };
+      this.cloudLog.push(entry);
+      let r = req.method === 'OPTIONS' ? { status: 204 } : (handler(entry) || { status: 404, body: { error: 'not found' } });
+      const text = r.body == null ? '' : JSON.stringify(r.body);
+      await this.send('Fetch.fulfillRequest', {
+        requestId: p.requestId, responseCode: r.status || 200,
+        responseHeaders: [...cors, { name: 'content-type', value: 'application/json' }],
+        body: Buffer.from(text).toString('base64'),
+      }).catch(() => {});
+    });
+  }
+  // 把本機檔案塞進 <input type=file>（觸發 change → App 走真正的匯入流程）
+  async setFile(selector, path) {
+    await this.send('DOM.enable');
+    const { root } = await this.send('DOM.getDocument', { depth: 1 });
+    const { nodeId } = await this.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    if (!nodeId) throw new Error('no ' + selector);
+    await this.send('DOM.setFileInputFiles', { files: [path], nodeId });
+    await sleep(60);
+  }
+  async screenshot(file) {
+    const r = await this.send('Page.captureScreenshot', { format: 'png' });
+    (await import('node:fs')).writeFileSync(file, Buffer.from(r.data, 'base64'));
+  }
   // 真實觸控拖動：touchStart → 多次 touchMove → touchEnd（走瀏覽器手勢辨識，受 touch-action 約束）
   // steps 少＝快速甩動；stepDelay 大＝慢速拖動
   async touchScroll(x, y, distance, { steps = 10, stepDelay = 0 } = {}) {

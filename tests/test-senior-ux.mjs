@@ -34,13 +34,13 @@ assert.ok(js.includes('function confirmPanel'), '自製確認面板');
 assert.ok(js.includes(`querySelector('[data-p="no"]').focus()`), '預設焦點在取消');
 assert.ok(js.includes('pdanger'), '危險動作紅色樣式');
 assert.ok(!/[^.\w]confirm\(/.test(js.replace(/confirmPanel/g, 'CP')), '系統 confirm 已全數移除');
-for (const t of ['記下這期收款？', '刪除這筆借款？', '確認結案？', '進入法院？', '刪除收款']) {
+for (const t of ['記下這期收款？', '結案並刪除這筆借款？', '確認結案？', '進入法院？', '刪除收款']) {
   assert.ok(js.includes(t), `確認面板文案：${t}`);
 }
 
 // ── 二、按鈕短文案：新有、舊無 ──
 for (const t of ['記本期收款', '記補繳（', '標記欠繳', '更正借款資料',
-  '刪除借款', '退回欠繳', '撤銷結清', '改基本資料']) {
+  '結案刪除借款', '退回欠繳', '更正基本資料']) {
   assert.ok(js.includes(t), `新文案：${t}`);
 }
 for (const t of ['收到補繳，記', '沒收到錢，標記欠繳', '結清還本</button>', '刪除誤建資料',
@@ -115,7 +115,7 @@ assert.ok(js.includes("'ics-stop-all'") && js.includes('行事曆（選用）'),
 assert.ok(js.includes('已標記欠繳，欠息從'), '狀態操作只留帳務訊息');
 
 // ── 借款頁名單化與設定頁列表化（v39）──
-assert.ok(js.includes("'people-tab'") && js.includes('進行中 ${running.length}'), '借款頁分段切換');
+assert.ok(!js.includes("'people-tab'") && !js.includes('peopleTab'), '借款頁不再有分段切換（v49）');
 assert.ok(css.includes('.plist { padding: 0;') && css.includes('.prow + .prow'), '名單容器＋分隔線');
 assert.ok(css.includes('.prow .nm { font-size: 21px; font-weight: 700') &&
   css.includes('.prow .right .amt { font-size: 24px; font-weight: 800'), '姓名21/金額24字級分工');

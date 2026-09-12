@@ -3,6 +3,11 @@ const BASE = 'https://yiqiji-sync.haoo512.workers.dev';
 const VAPID_PUBLIC = 'BIklPNnHHaruS7zCubOCiKLy2I58tV-PXqXVeADCl5zei_h7KK03X05OP4XwtqhVj5TBWLjGLqMLfut0OF_y8Tc';
 const KEY_STORE = 'loanapp.synckey';
 const META_STORE = 'loanapp.syncmeta';
+// Worker 單次上傳上限（body 字串長度）；結案封存前先算，超過就阻止並提示匯出，不得偷刪救援資料
+export const MAX_BODY = 2_000_000;
+export function payloadSize(state) {
+  return JSON.stringify({ state, updatedAt: state.updatedAt || Date.now() }).length;
+}
 
 export function getKey() {
   let k = localStorage.getItem(KEY_STORE);

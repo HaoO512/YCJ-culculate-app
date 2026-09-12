@@ -6,6 +6,7 @@ import {
   prepaidUntil, settledInMonth, nextCollectDue,
   isActive, isProblem, stats, monthlySeries, monthReport, money,
   upcomingDues, missedDues, missedPeriods, mergeTombstones, nextUnsettledPeriod, nextPaymentDraft,
+  archiveAndDeleteLoan, mergeDeletedRecords, migrateLegacyClosed,
 } from './calc.js';
 import { downloadICS, downloadStopAllICS } from './ics.js';
 import { exportXlsx, parseXlsx } from './xlsx-io.js';
@@ -14,7 +15,6 @@ import * as cloud from './cloud.js';
 let state = load();
 let route = { view: 'home' };          // home | people | detail | form | problems | stats | settings
 let statsTab = 'month';                // month | overview
-let peopleTab = 'running';             // running | closed
 let calCursor = null;                  // {y, m} 月曆目前顯示的月份
 let calSelected = null;                // 點選的日子（數字）
 let statsCursor = null;                // {y, m} 月報目前顯示的月份
@@ -23,8 +23,9 @@ const $view = document.getElementById('view');
 const $tabbar = document.getElementById('tabbar');
 const $importFile = document.getElementById('import-file');
 
-const STATUS_TXT = { normal: '正常', overdue: '欠繳', legal: '法院處理中', closed: '已結清' };
-const STATUS_CHIP = { normal: 'ok', overdue: 'bad', legal: 'bad', closed: 'done' };
+// v49：App 內只有進行中的三種狀態；結案（含法院結案、舊版已結清）一律封存到 deletedRecords，不再是畫面狀態
+const STATUS_TXT = { normal: '正常', overdue: '欠繳', legal: '法院處理中' };
+const STATUS_CHIP = { normal: 'ok', overdue: 'bad', legal: 'bad' };
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -49,6 +50,29 @@ function go(view, params = {}) {
 function commit() {
   save(state);
   render();
+}
+
+// 結案封存的最後一步：nextState 已完整算好，寫入成功才換掉畫面中的 state；失敗則原借款、原收款原封不動
+// 雲端容量：達 Worker 上傳上限就阻止並提示先匯出，不得偷刪最舊救援資料
+function commitArchive(next) {
+  if (cloud.payloadSize(next) > cloud.MAX_BODY) {
+    alert('資料量已達雲端容量上限，這次結案沒有儲存。\n請先到設定「匯出 Excel 檔」備份，再聯絡管理者整理救援資料。');
+    return false;
+  }
+  try { save(next); }
+  catch { alert('結案失敗，原本資料沒有變動。'); return false; }
+  state = next;
+  return true;
+}
+
+// 接收外來資料（雲端拉取／快照復原）：救援封存只增不減（舊裝置上傳的資料不能洗掉封存）、
+// 舊 closed 自動遷移、正式區與封存區同 ID 以封存為準（舊裝置不能把帳復活）
+function adoptState(incoming, { mergeArchive = true } = {}) {
+  const merged = mergeArchive
+    ? { ...incoming, deletedRecords: mergeDeletedRecords(state.deletedRecords, incoming.deletedRecords) }
+    : { ...incoming };
+  if (!merged.deletedRecords || !merged.deletedRecords.length) delete merged.deletedRecords;
+  return migrateLegacyClosed(merged).state;
 }
 
 function loanById(id) { return state.loans.find(l => l.id === id); }
@@ -276,51 +300,36 @@ function viewHome() {
 // ───────────────────────── 借款人列表 ─────────────────────────
 
 function viewPeople() {
+  // 只有進行中的借款；結案資料已封存，不在 App 任何畫面出現
   const order = { overdue: 0, legal: 0, normal: 1 };
-  const running = state.loans.filter(isActive).sort((a, b) =>
+  const list = state.loans.filter(isActive).sort((a, b) =>
     (order[a.status] - order[b.status]) || a.name.localeCompare(b.name, 'zh-Hant'));
-  const closed = state.loans.filter(l => l.status === 'closed')
-    .sort((a, b) => (b.closedDate || '').localeCompare(a.closedDate || ''));
-  const list = peopleTab === 'running' ? running : closed;
 
   const CHECK = '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>';
   const WARN = '<svg viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5v.5"/></svg>';
-  const icon = l => l.status === 'closed'
-    ? `<span class="picon done">${CHECK}</span>`
-    : (isProblem(l) ? `<span class="picon bad">${WARN}</span>` : `<span class="picon ok">${CHECK}</span>`);
+  const icon = l => isProblem(l) ? `<span class="picon bad">${WARN}</span>` : `<span class="picon ok">${CHECK}</span>`;
 
-  const rowOf = l => {
-    const right = l.status === 'closed'
-      ? `<span class="amt" style="font-size:18px;color:var(--sub)">${l.closedDate
-          ? '結清 ' + (d => d.getMonth() + 1 + '/' + d.getDate())(parseDate(l.closedDate))
-          : '結清日未填'}</span>`
-      : `<span class="amt">${money(monthlyInterest(l))}</span><span class="sub">每月利息</span>`;
-    return `
+  const rowOf = l => `
       <button class="prow" data-action="open-loan" data-id="${l.id}">
         ${icon(l)}
         <span class="mid">
           <span class="nm">${esc(l.name)}</span>
           <span class="lower">
-            <span class="stt ${l.status === 'normal' ? 'g' : isProblem(l) ? 'r' : ''}">${STATUS_TXT[l.status]}</span>
-            <span class="right">${right}</span>
+            <span class="stt ${l.status === 'normal' ? 'g' : 'r'}">${STATUS_TXT[l.status]}</span>
+            <span class="right"><span class="amt">${money(monthlyInterest(l))}</span><span class="sub">每月利息</span></span>
           </span>
         </span>
         <span class="chev">›</span>
       </button>`;
-  };
 
   return `
     <div class="title-row"><h1 class="title">借款</h1>
       <span style="display:flex;gap:8px;align-items:center">
         <button class="addbtn" data-action="go" data-view="form">＋ 新增</button>${gearBtn()}
       </span></div>
-    <div class="seg">
-      <button class="${peopleTab === 'running' ? 'active' : ''}" data-action="people-tab" data-tab="running">進行中 ${running.length}</button>
-      <button class="${peopleTab === 'closed' ? 'active' : ''}" data-action="people-tab" data-tab="closed">結案紀錄 ${closed.length}</button>
-    </div>
     ${list.length
       ? `<div class="card plist">${list.map(rowOf).join('')}</div>`
-      : `<div class="empty">${peopleTab === 'running' ? '還沒有進行中的借款，按上面「＋ 新增」' : '沒有結案紀錄'}</div>`}`;
+      : '<div class="empty">還沒有借款，按上面「＋新增」</div>'}`;
 }
 
 // ───────────────────────── 借款人詳情 ─────────────────────────
@@ -382,7 +391,7 @@ function viewDetail() {
         <button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>`;
       more = `
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正借款資料</button>
-        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">結案刪除借款</button>`;
     } else {
       const dueNow = lateDays >= 0;   // 本期到期未收（含晚繳）
       primary = `
@@ -398,7 +407,7 @@ function viewDetail() {
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正借款資料</button>`;
       more = `
         ${dueNow && lateDays > 0 ? '' : `<button class="btn outline-red" data-action="mark-overdue" data-id="${l.id}">標記欠繳</button>`}
-        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">結案刪除借款</button>`;
     }
   } else if (l.status === 'overdue' || l.status === 'legal') {
     const periods = overduePeriods(l, now);
@@ -416,30 +425,15 @@ function viewDetail() {
       more = `
         <button class="btn outline-red" data-action="to-legal" data-id="${l.id}">進入法院</button>
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正借款資料</button>
-        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">結案刪除借款</button>`;
     } else {
       primary = debtCard + `
         <button class="btn accent" data-action="settle-legal" data-id="${l.id}">法院結案</button>
         <button class="btn outline-grey" data-action="delegal" data-id="${l.id}">退回欠繳</button>`;
       more = `
         <button class="btn outline-grey" data-action="edit" data-id="${l.id}">更正基本資料</button>
-        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除借款</button>`;
+        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">結案刪除借款</button>`;
     }
-  } else {
-    primary = `
-      <div class="card">
-        <div class="kv">
-          <div><span class="k">狀態</span><span class="v">已結清</span></div>
-          <div><span class="k">結清日</span><span class="v ${l.closedDate ? '' : 'red'}">${l.closedDate || '未填（過去月報會少算這筆）'}</span></div>
-          ${l.finalReceived != null ? `<div><span class="k">結案實收</span><span class="v">${money(l.finalReceived)}</span></div>` : ''}
-          ${l.writeoff ? `<div><span class="k">壞帳沖銷</span><span class="v red">${money(l.writeoff)}</span></div>` : ''}
-        </div>
-      </div>
-      <button class="btn accent" data-action="reopen" data-id="${l.id}">撤銷結清</button>
-      <button class="btn outline-grey" data-action="edit" data-id="${l.id}">改基本資料</button>`;
-    more = `
-        ${l.closedDate ? '' : `<button class="btn accent" data-action="fill-closed" data-id="${l.id}">補填結清日</button>`}
-        <button class="btn outline-red" data-action="delete-loan" data-id="${l.id}">刪除借款</button>`;
   }
 
   // 最近 3 筆收款：每天最常確認的是「上次何時收到」
@@ -491,8 +485,6 @@ function viewDetail() {
 
 function viewForm() {
   const editing = route.id ? loanById(route.id) : null;
-  const locked = !!(editing && editing.status === 'closed');
-  const dis = locked ? 'disabled' : '';
   const l = editing || {
     name: '', principal: '', rate: 2,
     startDate: fmtDate(today()), dueDay: today().getDate(),
@@ -512,24 +504,21 @@ function viewForm() {
       <button class="back" data-action="back">‹</button>
       <h1>${editing ? '編輯借款' : '新增借款'}</h1>
     </div>
-    ${locked ? `
-      <p class="hint" style="color:var(--red);font-size:18px;font-weight:700;margin:0 2px">已結清：金額與日期已鎖定。要更正請先撤銷結清。</p>
-      <button class="btn accent" data-action="reopen" data-id="${editing.id}">撤銷結清</button>`
-    : editing ? '<p class="hint" style="color:var(--sub);font-size:17px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
+    ${editing ? '<p class="hint" style="color:var(--sub);font-size:17px;margin:0 2px">改本金、利率、日期會連過去的欠息與統計一起重算 —— 只用來修打錯的資料。</p>' : ''}
 
     <div class="field"><label>借款人姓名</label>
       <input id="f-name" value="${esc(l.name)}" placeholder="王小明"></div>
     <div class="field"><label>本金</label>
-      <input id="f-principal" inputmode="numeric" value="${l.principal}" placeholder="600000" ${dis}></div>
+      <input id="f-principal" inputmode="numeric" value="${l.principal}" placeholder="600000"></div>
     <div class="field"><label>月利率 %（1.5–2）</label>
-      <input id="f-rate" inputmode="decimal" value="${l.rate}" ${dis}></div>
+      <input id="f-rate" inputmode="decimal" value="${l.rate}"></div>
     <div class="field"><label>借款日期</label>
-      <input id="f-start" type="date" value="${l.startDate}" ${dis}></div>
+      <input id="f-start" type="date" value="${l.startDate}"></div>
     <div class="field"><label>收息日（每月幾號）</label>
-      <select id="f-dueday" ${dis}>${dayOptions.join('')}</select>
+      <select id="f-dueday">${dayOptions.join('')}</select>
       <span class="hint">29–31 號：當月沒有該號時自動改當月最後一天</span></div>
     <div class="field"><label>簽約預收利息</label>
-      <select id="f-prepaid" ${dis}>${pmOptions}</select>
+      <select id="f-prepaid">${pmOptions}</select>
       <span class="hint">簽約當天一次收走前幾個月利息，提醒自動從之後開始</span></div>
 
     <div class="calc-panel">
@@ -602,20 +591,9 @@ async function saveForm(id) {
 
   if (id) {
     const l = loanById(id);
-    const coreChanged = l.principal !== principal || l.rate !== rate ||
-      l.startDate !== startDate || l.dueDay !== dueDay || (l.prepaidMonths || 0) !== prepaidMonths;
-    // 已結清／結案：金額與日期鎖定，避免與歷史結案金額矛盾
-    if (l.status === 'closed' && coreChanged) {
-      alert('已結清的帳只能改姓名、介紹費、備註。\n金額或日期真的錯了，先在「更多操作」按「撤銷結清」再改。');
-      return;
-    }
     // 日期關係：存進去才發現壞掉會整份進救援流程，這裡先擋
     if (l.overdueSince && l.overdueSince < startDate) {
       alert(`停繳日（${l.overdueSince}）會早於新的借款日，日期矛盾。\n先「恢復正常」清掉欠繳狀態再改借款日。`);
-      return;
-    }
-    if (l.closedDate && l.closedDate < startDate) {
-      alert(`結清日（${l.closedDate}）會早於新的借款日，日期矛盾。`);
       return;
     }
     const oldMi = monthlyInterest(l);
@@ -1052,7 +1030,6 @@ const actions = {
   'stats-next'() { shiftStatsMonth(1); },
   'stats-today'() { statsCursor = null; render(); },
   'stats-tab'(el) { statsTab = el.dataset.tab; render(); $view.scrollTop = 0; },
-  'people-tab'(el) { peopleTab = el.dataset.tab; render(); $view.scrollTop = 0; },
 
   async receive(el) {
     const l = loanById(el.dataset.id);
@@ -1218,7 +1195,7 @@ const actions = {
     const amount = Number(v);
     if (!(Number.isFinite(amount) && amount > 0)) { alert('金額要是正常的正數'); return; }
     if (amount > accrued) {
-      alert(`超過目前欠息 ${money(accrued)}。\n這裡只記補欠息；本金已收回請到「更多操作」刪除借款，或用備註記錄。`);
+      alert(`超過目前欠息 ${money(accrued)}。\n這裡只記補欠息；本金已收回請到「更多操作」結案刪除借款，或用備註記錄。`);
       return;
     }
     const ok = await confirmPanel({
@@ -1256,58 +1233,42 @@ const actions = {
       ok: '確認結案', danger: true,
     });
     if (!ok) return;
-    l.finalReceived = got;
-    l.writeoff = wo;
-    l.status = 'closed';
-    l.closedDate = fmtDate(now);
-    commit();
-    setTimeout(() => alert(`法院案件已結案。${l.writeoff ? `壞帳沖銷 ${money(l.writeoff)} 已記入統計。` : '全額收回，沒有壞帳。'}`), 300);
+    // 結案結果寫進「待封存的副本」，再整筆封存移除；正式區不留無入口的結案帳
+    const patched = {
+      ...state,
+      loans: state.loans.map(x => x.id === l.id
+        ? { ...x, finalReceived: got, writeoff: wo, status: 'closed', closedDate: fmtDate(now) }
+        : x),
+    };
+    const next = archiveAndDeleteLoan(patched, l.id, 'legal-settled', Date.now());
+    if (!next) return;   // 面板期間已被結案（快速連點）：不重複封存
+    if (!commitArchive(next)) return;
+    go('people');
+    toast(`「${l.name}」法院已結案${wo ? `，壞帳沖銷 ${money(wo)}` : '，全額收回'}`);
   },
-  // 刪除借款：唯一的一般結束途徑（誤建、或本金已收回不再收息）。
-  // 全部確認走完前不動 state；刪除本身不補利息、不產生壞帳沖銷
+  // 結案刪除借款：進行中借款唯一的正常結束流程（本金收回、誤建都走這裡）。
+  // 全部確認走完前不動 state；不補利息、不產生壞帳沖銷；完整借款＋收款封存到 deletedRecords 供救援
   async 'delete-loan'(el) {
     const l = loanById(el.dataset.id);
     if (!l) return;
     const pays = state.payments.filter(p => p.loanId === l.id);
     const total = pays.reduce((s, p) => s + p.amount, 0);
     const ok = await confirmPanel({
-      title: '刪除這筆借款？',
+      title: '結案並刪除這筆借款？',
       lines: [l.name,
-        ...(pays.length ? [{ sub: `會一起刪除 ${pays.length} 筆收款，共 ${money(total)}` }] : []),
-        { sub: '過去月報、總覽及 Excel 統計都會重新計算' }],
-      ok: '確認刪除', danger: true,
+        ...(pays.length ? [{ sub: `將移除 ${pays.length} 筆收款，共 ${money(total)}` }] : []),
+        { sub: 'App、月報、總覽及一般 Excel 將不再顯示' },
+        { sub: '完整資料會保留供救援' }],
+      ok: '結案刪除借款', danger: true,
     });
     if (!ok) return;
-    if (!loanById(l.id)) return;   // 面板期間已被刪（快速連點／另一路徑）：不重複執行
-    // 墓碑清單：留下 UID 需要的最小資訊，讓「停止所有提醒」能停到已刪的帳
-    // 依 ID 去重後保留最新 100 筆（與本機/雲端/Excel 驗證一致）
-    state.tombstones = [
-      ...(state.tombstones || []).filter(t => t.id !== l.id),
-      { id: l.id, name: l.name, dueDay: l.dueDay, startDate: l.startDate },
-    ].slice(-100);
-    state.loans = state.loans.filter(x => x.id !== l.id);
-    state.payments = state.payments.filter(p => p.loanId !== l.id);
-    save(state); go('people');
-    toast(`已刪除『${l.name}』`);
+    const next = archiveAndDeleteLoan(state, l.id, 'closed', Date.now());
+    if (!next) return;   // 面板期間已被結案（快速連點／另一路徑）：只產生一份封存
+    if (!commitArchive(next)) return;
+    go('people');
+    toast(`「${l.name}」已結案刪除`);
   },
 
-  async 'reopen'(el) {
-    const l = loanById(el.dataset.id);
-    const ok = await confirmPanel({
-      title: '撤銷結清？',
-      lines: [l.name, { sub: '回到正常收息' + (l.finalReceived != null || l.writeoff ? '；結案實收與壞帳記錄會清除' : '') }],
-      ok: '撤銷結清',
-    });
-    if (!ok) return;
-    l.status = 'normal';
-    l.closedDate = null;
-    l.finalReceived = null;
-    l.writeoff = null;
-    l.overdueSince = null;   // 法院案撤銷不留舊停繳日，避免殘留隱藏日期
-    save(state);
-    go('detail', { id: l.id });
-    setTimeout(() => alert('已撤銷結清，回到正常收息。'), 300);
-  },
   async 'delegal'(el) {
     const l = loanById(el.dataset.id);
     const ok = await confirmPanel({
@@ -1317,23 +1278,6 @@ const actions = {
     });
     if (!ok) return;
     l.status = 'overdue';
-    commit();
-  },
-  'fill-closed'(el) {
-    const l = loanById(el.dataset.id);
-    // 預設帶最近一次收款日僅供參考，避免順手按掉「今天」把舊月報多算好幾個月
-    const lastPay = state.payments.filter(p => p.loanId === l.id)
-      .sort((a, b) => b.date.localeCompare(a.date))[0];
-    const d = prompt(
-      `這筆是哪天結清的？（格式 2026-08-10）\n填了之後，結清前的月份才會正確出現在月報裡。${lastPay ? `\n（最近一次收款是 ${lastPay.date}，僅供參考）` : ''}`,
-      lastPay ? lastPay.date : '');
-    if (!d) return;
-    const t = d.trim();
-    const dd = /^\d{4}-\d{2}-\d{2}$/.test(t) ? parseDate(t) : null;
-    if (!dd || fmtDate(dd) !== t) { alert('這不是真實日期，格式要像 2026-08-10'); return; }
-    if (dd < parseDate(l.startDate)) { alert('結清日不能早於借款日'); return; }
-    if (dd > today()) { alert('結清日不能是未來'); return; }
-    l.closedDate = t;
     commit();
   },
   // 行事曆是手動選用功能：只有設定頁的兩顆按鈕會觸發下載
@@ -1363,7 +1307,7 @@ const actions = {
       const r = await cloud.pull();
       const cloudAt = r && r.state ? (r.state.updatedAt || r.updatedAt || 0) : 0;
       if (cloudAt > (state.updatedAt || 0)) {
-        state = r.state;
+        state = adoptState(r.state);
         save(state, false);
       } else {
         await cloud.pushNow(state);
@@ -1397,7 +1341,7 @@ const actions = {
     try {
       const r = await cloud.pull();
       if (r && r.state) {
-        state = r.state;
+        state = adoptState(r.state, { mergeArchive: false });   // 換金鑰＝換一份資料，不把這支手機的封存混進去
         save(state, false);
         alert('已連上，資料同步完成。');
         go('home');
@@ -1434,8 +1378,8 @@ function shiftStatsMonth(delta) {
 const WRITE_ACTIONS = new Set([
   'save-form', 'receive', 'receive-missed', 'repay-overdue',
   'del-payment', 'payedit-save', 'mark-overdue', 'back-normal',
-  'to-legal', 'delegal', 'settle-legal', 'reopen',
-  'fill-closed', 'delete-loan', 'export-xlsx',
+  'to-legal', 'delegal', 'settle-legal',
+  'delete-loan', 'export-xlsx',
   'cloud-sync-now', 'cloud-push-enable', 'cloud-set-key',
 ]);
 // 「匯入」按鈕只開檔案選擇器，不在此鎖；真正的解析與取代在 change 事件內上鎖
@@ -1489,9 +1433,20 @@ async function doImport(f) {
     return;
   }
   const { loans, payments } = result.state;
+  // 救援封存不能被整批取代洗掉：既有＋檔內依借款 ID 合併，相同 ID 以較新的 deletedAt 為準
+  const archive = mergeDeletedRecords(state.deletedRecords, result.state.deletedRecords);
+  const archivedIds = new Set(archive.map(r => r.loan.id));
+  // 已結案刪除的借款不得經一般匯入復活（舊 Excel 的「已結清」列不算復活，會在下面遷移進封存）
+  const revived = loans.filter(l => l.status !== 'closed' && archivedIds.has(l.id));
+  if (revived.length) {
+    alert(revived.map(l => `「${l.name}」已結案刪除，不能透過一般匯入復活。`).join('\n') + '\n\n匯入已取消，資料沒有動。');
+    return;
+  }
+  const legacy = loans.filter(l => l.status === 'closed').length;
   const ok = await confirmPanel({
     title: '匯入並取代全部資料？',
-    lines: [`${loans.length} 筆借款、${payments.length} 筆收款`,
+    lines: [`${loans.length - legacy} 筆借款、${payments.length} 筆收款`,
+      ...(legacy ? [{ sub: `另有 ${legacy} 筆舊版已結清，會直接封存` }] : []),
       { sub: '現在 App 裡的資料會被整批取代' }],
     ok: '匯入取代', danger: true,
   });
@@ -1501,7 +1456,8 @@ async function doImport(f) {
   const liveIds = new Set(result.state.loans.map(l => l.id));
   const merged = mergeTombstones(state.tombstones, result.state.tombstones, liveIds);
   if (merged.length) result.state.tombstones = merged; else delete result.state.tombstones;
-  state = result.state;
+  if (archive.length) result.state.deletedRecords = archive; else delete result.state.deletedRecords;
+  state = migrateLegacyClosed(result.state).state;
   save(state); go('home');
 }
 
@@ -1525,15 +1481,6 @@ save.onSave = () => {
 };
 
 // 開機：先畫本地（畫不出來就顯示救援訊息，不讓白屏卡死），再比對雲端，新的贏
-// 一次性提示：舊版結清的帳沒有結清日，過去月報會少算
-const noClosedDate = state.loans.filter(l => l.status === 'closed' && !l.closedDate);
-if (noClosedDate.length && !localStorage.getItem('loanapp.closedNotice')) {
-  localStorage.setItem('loanapp.closedNotice', '1');
-  setTimeout(() => alert(
-    `有 ${noClosedDate.length} 筆已結清的帳沒填結清日（${noClosedDate.map(l => l.name).join('、')}）。\n` +
-    '到「借款 → 結案紀錄」點進去 → 更多操作 → 補填結清日，過去月報才算得準。'), 800);
-}
-
 try {
   render();
 } catch (e) {
@@ -1544,7 +1491,7 @@ cloud.pull().then(r => {
   if (!r || !r.state) { if (shouldSync()) cloud.schedulePush(() => state); return; }
   const cloudAt = r.state.updatedAt || r.updatedAt || 0;
   if (cloudAt > (state.updatedAt || 0)) {
-    state = r.state;
+    state = adoptState(r.state);
     save(state, false);
     render();
   } else if ((state.updatedAt || 0) > cloudAt && shouldSync()) {

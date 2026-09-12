@@ -207,6 +207,38 @@ function validDate(s) {
   return m >= 1 && m <= 12 && d >= 1 && d <= daysInMonth(y, m - 1);
 }
 function validMoney(n) { return typeof n === 'number' && Number.isFinite(n) && n >= 0; }
+function validDueDay(d) { return d === 'EOM' || (Number.isInteger(d) && d >= 1 && d <= 31); }
+const ARCHIVE_REASONS = ['closed', 'legal-settled', 'legacy-closed'];
+
+// 單筆借款規則（正式區與救援封存區共用；與 App store.js 同一套）
+// closed 仍接受：舊裝置資料與封存區都會出現，不能拒收
+function validateLoan(l) {
+  if (typeof l.name !== 'string' || !l.name.trim()) return '借款缺姓名';
+  if (!(typeof l.principal === 'number' && Number.isFinite(l.principal) && l.principal > 0)) return `${l.name}：本金無效`;
+  if (!(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0 && l.rate <= 20)) return `${l.name}：利率無效`;
+  if (l.finalReceived != null && !validMoney(l.finalReceived)) return `${l.name}：結案實收無效`;
+  if (l.writeoff != null && !validMoney(l.writeoff)) return `${l.name}：壞帳沖銷無效`;
+  if (!validDate(l.startDate)) return `${l.name}：借款日期無效`;
+  if (!validDueDay(l.dueDay)) return `${l.name}：收息日無效`;
+  if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) return `${l.name}：狀態無效`;
+  if ((l.status === 'overdue' || l.status === 'legal') && !validDate(l.overdueSince)) return `${l.name}：停繳日無效`;
+  if (l.overdueSince != null && validDate(l.overdueSince) && l.overdueSince < l.startDate) return `${l.name}：停繳日早於借款日`;
+  if (l.closedDate != null && (!validDate(l.closedDate) || l.closedDate < l.startDate)) return `${l.name}：結清日無效`;
+  if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) return `${l.name}：預收月數無效`;
+  if (l.referralFee != null && !validMoney(l.referralFee)) return `${l.name}：介紹費無效`;
+  // 代書費已退役：rollout 期間舊版資料仍可能帶 appraisalFee，直接忽略不驗證
+  return null;
+}
+
+function validatePayment(p, loanIds, payIds) {
+  if (typeof p.id !== 'string' || !p.id || payIds.has(p.id)) return '收款編號缺失或重複';
+  payIds.add(p.id);
+  if (!loanIds.has(p.loanId)) return '收款記錄對不上借款';
+  if (!validDate(p.date)) return '收款日期無效';
+  if (p.dueDate != null && !validDate(p.dueDate)) return '收款歸屬期無效';
+  if (!(typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount > 0)) return '收款金額無效';
+  return null;
+}
 
 export function validateState(state) {
   if (!Array.isArray(state.payments)) return 'payments 不是陣列';
@@ -215,20 +247,8 @@ export function validateState(state) {
   for (const l of state.loans) {
     if (typeof l.id !== 'string' || !l.id || loanIds.has(l.id)) return '借款編號缺失或重複';
     loanIds.add(l.id);
-    if (typeof l.name !== 'string' || !l.name.trim()) return '借款缺姓名';
-    if (!(typeof l.principal === 'number' && Number.isFinite(l.principal) && l.principal > 0)) return `${l.name}：本金無效`;
-    if (!(typeof l.rate === 'number' && Number.isFinite(l.rate) && l.rate > 0 && l.rate <= 20)) return `${l.name}：利率無效`;
-    if (l.finalReceived != null && !validMoney(l.finalReceived)) return `${l.name}：結案實收無效`;
-    if (l.writeoff != null && !validMoney(l.writeoff)) return `${l.name}：壞帳沖銷無效`;
-    if (!validDate(l.startDate)) return `${l.name}：借款日期無效`;
-    if (!(l.dueDay === 'EOM' || (Number.isInteger(l.dueDay) && l.dueDay >= 1 && l.dueDay <= 31))) return `${l.name}：收息日無效`;
-    if (!['normal', 'overdue', 'legal', 'closed'].includes(l.status)) return `${l.name}：狀態無效`;
-    if ((l.status === 'overdue' || l.status === 'legal') && !validDate(l.overdueSince)) return `${l.name}：停繳日無效`;
-    if (l.overdueSince != null && validDate(l.overdueSince) && l.overdueSince < l.startDate) return `${l.name}：停繳日早於借款日`;
-    if (l.closedDate != null && (!validDate(l.closedDate) || l.closedDate < l.startDate)) return `${l.name}：結清日無效`;
-    if (l.prepaidMonths != null && !(Number.isInteger(l.prepaidMonths) && l.prepaidMonths >= 0 && l.prepaidMonths <= 12)) return `${l.name}：預收月數無效`;
-    if (l.referralFee != null && !validMoney(l.referralFee)) return `${l.name}：介紹費無效`;
-    // 代書費已退役：rollout 期間舊版資料仍可能帶 appraisalFee，直接忽略不驗證
+    const e = validateLoan(l);
+    if (e) return e;
   }
   // 墓碑清單（已刪帳的停止提醒用），選填
   if (state.tombstones != null) {
@@ -238,18 +258,39 @@ export function validateState(state) {
       if (typeof t.id !== 'string' || !t.id || tIds.has(t.id)) return '刪帳清單編號缺失或重複';
       tIds.add(t.id);
       if (typeof t.name !== 'string') return '刪帳清單姓名無效';
-      if (!(t.dueDay === 'EOM' || (Number.isInteger(t.dueDay) && t.dueDay >= 1 && t.dueDay <= 31))) return '刪帳清單收息日無效';
+      if (!validDueDay(t.dueDay)) return '刪帳清單收息日無效';
       if (!validDate(t.startDate)) return '刪帳清單日期無效';
     }
   }
   const payIds = new Set();
   for (const p of state.payments) {
-    if (typeof p.id !== 'string' || !p.id || payIds.has(p.id)) return '收款編號缺失或重複';
-    payIds.add(p.id);
-    if (!loanIds.has(p.loanId)) return '收款記錄對不上借款';
-    if (!validDate(p.date)) return '收款日期無效';
-    if (p.dueDate != null && !validDate(p.dueDate)) return '收款歸屬期無效';
-    if (!(typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount > 0)) return '收款金額無效';
+    const e = validatePayment(p, loanIds, payIds);
+    if (e) return e;
+  }
+  // 救援封存（結案刪除的完整借款＋收款），選填：只保存不運算
+  // 每筆借款過同一套規則；正式區與封存區借款 ID 不得重複、收款 ID 全域不得重複
+  if (state.deletedRecords != null) {
+    if (!Array.isArray(state.deletedRecords)) return '救援封存不是陣列';
+    if (state.deletedRecords.length > 5000) return '資料量異常';
+    const aIds = new Set();
+    for (const r of state.deletedRecords) {
+      if (!r || typeof r !== 'object' || !r.loan || typeof r.loan !== 'object') return '救援封存格式無效';
+      if (!(Number.isInteger(r.deletedAt) && r.deletedAt > 0)) return '救援封存刪除時間無效';
+      if (!ARCHIVE_REASONS.includes(r.reason)) return '救援封存原因無效';
+      const l = r.loan;
+      if (typeof l.id !== 'string' || !l.id) return '救援封存借款編號缺失';
+      if (aIds.has(l.id)) return `${l.name}：救援封存編號重複`;
+      if (loanIds.has(l.id)) return `${l.name}：已結案刪除的借款不得同時存在於正式資料`;
+      aIds.add(l.id);
+      const e = validateLoan(l);
+      if (e) return `救援封存：${e}`;
+      if (!Array.isArray(r.payments)) return `${l.name}：救援收款不是陣列`;
+      const own = new Set([l.id]);
+      for (const p of r.payments) {
+        const pe = validatePayment(p, own, payIds);
+        if (pe) return `救援封存：${pe}`;
+      }
+    }
   }
   return null;
 }
