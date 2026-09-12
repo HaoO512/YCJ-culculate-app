@@ -5,6 +5,8 @@
 // - POST /test-push   測試推播
 // - cron 台北 09:30   明天/今天收息 → 推播
 
+import { mergeDeletedRecords } from '../../docs/js/calc.js';
+
 // ── 工具 ──
 const enc = new TextEncoder();
 
@@ -295,6 +297,37 @@ export function validateState(state) {
   return null;
 }
 
+// ── 救援封存伺服器端保底 ──
+// 舊裝置（沒有 deletedRecords 的舊帳本）本機時間戳較新時會直接 PUT 覆蓋；
+// 這裡把 KV 既有封存合併進上傳資料（同 ID 取較新 deletedAt），封存 ID 若出現在上傳的正式借款，封存優先、移除該借款及收款。
+// 回傳 { state, changed }；不改動 closed 等其他資料（那是 App 端遷移的責任）
+export function reconcileArchive(incoming, existing) {
+  const prevRecs = existing && Array.isArray(existing.deletedRecords) ? existing.deletedRecords : [];
+  if (!prevRecs.length) return { state: incoming, changed: false };
+  const merged = mergeDeletedRecords(prevRecs, incoming.deletedRecords);
+  const ids = new Set(merged.map(r => r.loan.id));
+  const revived = incoming.loans.filter(l => ids.has(l.id));
+  // 內容相同（不計順序）就原樣存，不動時間戳
+  const sig = recs => JSON.stringify([...recs].map(r => [r.loan.id, JSON.stringify(r)]).sort());
+  const same = !revived.length && sig(merged) === sig(incoming.deletedRecords || []);
+  if (same) return { state: incoming, changed: false };
+  const revivedIds = new Set(revived.map(l => l.id));
+  const tombstones = [
+    ...(incoming.tombstones || []).filter(t => !revivedIds.has(t.id)),
+    ...revived.map(l => ({ id: l.id, name: l.name, dueDay: l.dueDay, startDate: l.startDate })),
+  ].slice(-100);
+  return {
+    changed: true,
+    state: {
+      ...incoming,
+      loans: incoming.loans.filter(l => !revivedIds.has(l.id)),
+      payments: (incoming.payments || []).filter(p => !revivedIds.has(p.loanId)),
+      ...(tombstones.length ? { tombstones } : {}),
+      deletedRecords: merged,
+    },
+  };
+}
+
 // ── HTTP ──
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -334,14 +367,30 @@ export default {
         const cnt = (await env.KV.list({ prefix: 'data:' })).keys.length;
         if (cnt >= 20) return json({ error: '雲端帳戶數已達上限，請用既有金鑰連線' }, 403);
       }
+      // 救援封存保底：KV 既有封存合併進上傳資料，合併後重新驗證、重新檢查 2MB，最後才寫回
+      let stored = body;
+      if (existing) {
+        let prev = null;
+        try { prev = JSON.parse(existing).state; } catch { /* 舊資料壞掉就不合併 */ }
+        const rc = reconcileArchive(parsed.state, prev);
+        if (rc.changed) {
+          const verr2 = validateState(rc.state);
+          if (verr2) return json({ error: `合併救援封存後驗證失敗：${verr2}` }, 400);
+          // 時間戳改成現在：上傳裝置下次開機會拉回這份（被移除的復活借款、補回的封存）
+          const ts = Date.now();
+          parsed = { ...parsed, state: { ...rc.state, updatedAt: ts }, updatedAt: ts, archiveReconciled: true };
+          stored = JSON.stringify(parsed);
+          if (stored.length > 2_000_000) return json({ error: 'too big' }, 413);
+        }
+      }
       // 當日第一次寫入前，把舊資料存成快照
       const day = tpeDateStr();
       const snapKey = `snap:${uid}:${day}`;
       if (existing && !(await env.KV.get(snapKey))) {
         await env.KV.put(snapKey, existing, { expirationTtl: 31 * 86400 });
       }
-      await env.KV.put(`data:${uid}`, body);
-      return json({ ok: true, savedAt: Date.now() });
+      await env.KV.put(`data:${uid}`, stored);
+      return json({ ok: true, savedAt: Date.now(), ...(stored !== body ? { archiveReconciled: true } : {}) });
     }
 
     if (url.pathname === '/snapshots' && req.method === 'GET') {

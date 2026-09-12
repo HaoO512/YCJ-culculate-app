@@ -65,6 +65,19 @@ function commitArchive(next) {
   return true;
 }
 
+// 每次 cloud.pull() 成功後、不論誰的 updatedAt 較新，都先把雲端封存併進本機（封存永不遺失）；
+// 本機若因此變動（補回封存、移除復活的借款）就存檔但不動時間戳 —— 接著本機較新才推、雲端較新才拉
+function absorbArchive(cloudState) {
+  const merged = mergeDeletedRecords(state.deletedRecords, cloudState && cloudState.deletedRecords);
+  if (!merged.length) return;
+  const before = JSON.stringify(state.deletedRecords || []);
+  const next = migrateLegacyClosed({ ...state, deletedRecords: merged }).state;
+  if (JSON.stringify(next.deletedRecords) === before && next.loans.length === state.loans.length) return;
+  state = next;
+  save(state, false);
+  render();
+}
+
 // 接收外來資料（雲端拉取／快照復原）：救援封存只增不減（舊裝置上傳的資料不能洗掉封存）、
 // 舊 closed 自動遷移、正式區與封存區同 ID 以封存為準（舊裝置不能把帳復活）
 function adoptState(incoming, { mergeArchive = true } = {}) {
@@ -1306,6 +1319,7 @@ const actions = {
     try {
       const r = await cloud.pull();
       const cloudAt = r && r.state ? (r.state.updatedAt || r.updatedAt || 0) : 0;
+      if (r && r.state) absorbArchive(r.state);
       if (cloudAt > (state.updatedAt || 0)) {
         state = adoptState(r.state);
         save(state, false);
@@ -1490,6 +1504,7 @@ try {
 cloud.pull().then(r => {
   if (!r || !r.state) { if (shouldSync()) cloud.schedulePush(() => state); return; }
   const cloudAt = r.state.updatedAt || r.updatedAt || 0;
+  absorbArchive(r.state);   // 先合併雙方封存，再決定拉或推
   if (cloudAt > (state.updatedAt || 0)) {
     state = adoptState(r.state);
     save(state, false);
