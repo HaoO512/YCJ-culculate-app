@@ -18,7 +18,7 @@ assert.ok(js.includes('actionBusy'), '全域鎖存在');
 assert.ok(js.includes('處理中…'), '處理期間顯示處理中');
 assert.ok(js.includes('delay(800)'), '至少鎖 800ms');
 for (const a of ['save-form', 'receive', 'receive-missed', 'del-payment', 'mark-overdue',
-  'back-normal', 'close-normal', 'settle-legal', 'delete-loan']) {
+  'back-normal', 'settle-legal', 'delete-loan']) {
   assert.ok(js.includes(`'${a}'`), `寫入動作 ${a} 已納入鎖定`);
 }
 // 匯入鎖競爭：按鈕只開選擇器不佔鎖；選到檔案後鎖住解析與取代
@@ -34,17 +34,18 @@ assert.ok(js.includes('function confirmPanel'), '自製確認面板');
 assert.ok(js.includes(`querySelector('[data-p="no"]').focus()`), '預設焦點在取消');
 assert.ok(js.includes('pdanger'), '危險動作紅色樣式');
 assert.ok(!/[^.\w]confirm\(/.test(js.replace(/confirmPanel/g, 'CP')), '系統 confirm 已全數移除');
-for (const t of ['記下這期收款？', '刪除錯帳？', '確認結清？', '進入法院？', '刪除收款']) {
+for (const t of ['記下這期收款？', '刪除這筆借款？', '確認結案？', '進入法院？', '刪除收款']) {
   assert.ok(js.includes(t), `確認面板文案：${t}`);
 }
 
 // ── 二、按鈕短文案：新有、舊無 ──
-for (const t of ['記本期收款', '記補繳（', '標記欠繳', '更正借款資料', '本金已還清',
-  '刪除錯帳', '退回欠繳', '撤銷結清', '改基本資料']) {
+for (const t of ['記本期收款', '記補繳（', '標記欠繳', '更正借款資料',
+  '刪除借款', '退回欠繳', '撤銷結清', '改基本資料']) {
   assert.ok(js.includes(t), `新文案：${t}`);
 }
 for (const t of ['收到補繳，記', '沒收到錢，標記欠繳', '結清還本</button>', '刪除誤建資料',
-  '撤銷法院狀態', '修改姓名／費用／備註', '>改</button>', '>✕</button>']) {
+  '撤銷法院狀態', '修改姓名／費用／備註', '>改</button>', '>✕</button>',
+  '本金已還清', '刪除錯帳', '確認結清？', '還有欠息沒處理']) {   // v48：一般清帳退役、刪除改通用文案
   assert.ok(!js.includes(t), `舊文案已移除：${t}`);
 }
 assert.ok(js.includes('>更正</button>') && js.includes('>刪除</button>'), '收款列改「更正／刪除」文字鈕');
@@ -63,8 +64,8 @@ assert.ok(css.includes('--sub: #66594A'), '說明文字加深');
 assert.ok(/\.field label \{ font-size: 19px/.test(css), '表單標籤 ≥19px');
 
 // ── 回交批次：欠息處理、勾選補繳、結案摘要、匯入鎖、對比 ──
-assert.ok(js.includes('還有欠息沒處理'), '欠繳結清先處理欠息');
-assert.ok(js.includes('欠息已收') && js.includes('壞帳沖銷'), '欠息二選一');
+// v48：一般清帳（本金已還清／欠息二選一）已退役；法院結案仍保留壞帳沖銷
+assert.ok(js.includes('壞帳沖銷'), '法院結案保留壞帳沖銷');
 assert.ok(js.includes('function pickPanel'), '補繳期數可勾選');
 assert.ok(js.includes('確認結案？') && js.includes('壞帳沖銷 '), '結案前應收/實收/沖銷摘要');
 assert.ok(js.includes('async function doImport'), '匯入拆出可鎖定函數');
@@ -73,15 +74,15 @@ assert.ok(!/font-size:1[3-6]px/.test(js), 'App 內補充文字不得小於 17px'
 assert.ok(css.includes('.tab.active { color: var(--accent-deep); }'), '分頁選中用深橘');
 assert.ok(css.includes('.seg button.active { background: var(--accent-deep)'), '切換鈕用深橘底');
 
-// ── 結清流程：最終確認前不得動帳 ──
+// ── 刪除流程（v48 取代一般清帳）：最終確認前不得動帳 ──
 {
-  const fn = js.slice(js.indexOf("async 'close-normal'"), js.indexOf("async 'delete-loan'"));
+  const fn = js.slice(js.indexOf("async 'delete-loan'"), js.indexOf("async 'reopen'"));
   const firstWrite = Math.min(
-    ...['state.payments.push', 'l.writeoff', "l.status = 'closed'"]
+    ...['state.tombstones =', 'state.loans =', 'state.payments =']
       .map(s => { const i = fn.indexOf(s); return i < 0 ? Infinity : i; }));
-  const finalOk = fn.indexOf('最終確認後');
-  assert.ok(finalOk > 0 && firstWrite > finalOk, '結清：所有寫入都在最終確認之後');
-  assert.ok(fn.includes('arrearsChoice'), '欠息選擇先記住、後執行');
+  const finalOk = fn.indexOf('if (!ok) return;');
+  assert.ok(finalOk > 0 && firstWrite > finalOk, '刪除：所有寫入都在確認之後');
+  assert.ok(!fn.includes('state.payments.push') && !fn.includes('writeoff'), '刪除不補利息、不產生壞帳');
 }
 
 // ── 補繳面板可捲動、按鈕固定 ──

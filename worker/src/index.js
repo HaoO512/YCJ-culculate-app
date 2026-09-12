@@ -208,7 +208,7 @@ function validDate(s) {
 }
 function validMoney(n) { return typeof n === 'number' && Number.isFinite(n) && n >= 0; }
 
-function validateState(state) {
+export function validateState(state) {
   if (!Array.isArray(state.payments)) return 'payments 不是陣列';
   if (state.loans.length > 5000 || state.payments.length > 100000) return '資料量異常';
   const loanIds = new Set();

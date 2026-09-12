@@ -196,6 +196,16 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 }
 .p-pick input { width: 26px; height: 26px; accent-color: var(--green); flex: none; }
 
+/* 短訊息：刪除後浮出、不需按鍵、自動消失 */
+.toast {
+  position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content;
+  bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 90;
+  max-width: calc(100% - 32px); padding: 14px 22px; border-radius: 14px;
+  background: rgba(36, 30, 21, 0.92); color: #fff;
+  font-size: 19px; font-weight: 700; line-height: 1.3; text-align: center;
+  pointer-events: none; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
 /* 表單 */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 19px; font-weight: 700; color: var(--sub); }
@@ -291,12 +301,15 @@ h1.title { font-size: 28px; font-weight: 800; margin: 0; }
 .formula .fnote { font-size: 17px; color: var(--sub); margin: 0 2px 4px; }
 .hero-num { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0 0; }
 
-/* 名單容器：一張卡＋分隔線，取代逐筆大卡 */
-.plist { padding: 0; overflow: hidden; }
+/* 名單容器：一張卡＋分隔線，取代逐筆大卡
+   flex: none —— #view 是直向 flex 捲動殼；名單有 overflow:hidden 會被壓到剩餘高度、多的列被裁掉，
+   必須依內容完整撐開，捲動交給 #view */
+.plist { padding: 0; overflow: hidden; flex: none; }
 .prow {
   display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 96px;
   padding: 14px 16px; border: 0; background: none; font-family: inherit;
   font-size: inherit; color: inherit; text-align: left;
+  touch-action: pan-y;   /* 從姓名、金額、圖示或空白處起手都能上下滑 */
 }
 .prow + .prow, .plist .srow + .srow { border-top: 1px solid var(--line); }
 .picon { width: 44px; height: 44px; border-radius: 999px; display: grid; place-items: center; flex: none; margin-top: 2px; }
